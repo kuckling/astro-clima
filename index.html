@@ -126,7 +126,7 @@
         .cloud-bar { flex: 1; background: var(--accent-blue); border-radius: 3px 3px 0 0; min-height: 3px; opacity: 0.85; }
         .cloud-bar.astro-bar { background: var(--accent-amber); }
         .cloud-hours { display: flex; gap: 3px; font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
-        .cloud-hours span { flex: 1; text-align: center; }
+        .cloud-hours span { flex: 1; text-align: center; min-width: 0; overflow: hidden; white-space: nowrap; }
         .chart-container { position: relative; height: 300px; width: 100%; }
         .note { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
         .note b { color: var(--text-primary); }
@@ -929,10 +929,11 @@ function renderForecast(fc) {
     fcSpreadNote.textContent = nightFcSpreadMin === null ? 'sin pronóstico disponible'
         : (nightFcSpreadMin < 2 ? 'el modelo prevé rocío esta noche' : 'temperatura − punto de rocío del modelo, 18:00–06:00');
 
-    // Barras de nubosidad de las próximas 12 h.
+    // Barras de nubosidad de las próximas 6 h (una por hora, con su etiqueta:
+    // 6 etiquetas sí caben en una tarjeta angosta).
     const nowStr = gtNowStr();
     let shown = 0;
-    for (let i = 0; i < times.length && shown < 12; i++) {
+    for (let i = 0; i < times.length && shown < 6; i++) {
         if (times[i] < nowStr) continue;
         const v = isFinite(cloud[i]) ? cloud[i] : 0;
         const bar = document.createElement('div');

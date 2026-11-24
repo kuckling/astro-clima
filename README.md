@@ -1,5 +1,9 @@
 # Astro-Clima — Tablero meteorológico
 
+[![Abrir Astro-Clima](https://img.shields.io/badge/Abrir_Astro--Clima-38bdf8?style=for-the-badge&logo=githubpages&logoColor=white)](https://kuckling.github.io/astro-clima/)
+
+🌐 **Ver el tablero en vivo: https://kuckling.github.io/astro-clima/**
+
 Tablero en una sola página HTML para **observación astronómica**: combina los datos que la estación EBC ya envía a ThingSpeak con los parámetros que necesita un observatorio para decidir si se puede observar. Fue creado para el **Observatorio Astronómico El Arado** (San Pedro Pinula, Jalapa) y funciona con cualquier estación pública de ThingSpeak.
 
 ## Las dos secciones, separadas a propósito
@@ -50,7 +54,13 @@ No hace falta que sea una EBC: basta escribir el **ID de cualquier canal públic
 
 ## Instalar como aplicación (PWA)
 
-Igual que Aqua'ja: el paquete trae `manifest.json` y `sw.js`. Al abrir la página en el celular, el navegador ofrece instalarla en la pantalla de inicio. Sin internet se abre la app, pero los datos necesitan conexión.
+El paquete trae `manifest.json` y `sw.js`, así que el tablero se instala como aplicación y abre a pantalla completa, sin la barra del navegador. Sin internet se abre la app, pero los datos necesitan conexión.
+
+**Android (Chrome):** abre el tablero, toca los tres puntos ⋮ → **Instalar aplicación** (en algunas versiones dice **Agregar a pantalla principal**). Queda el icono en la pantalla de inicio.
+
+**iPhone (Safari):** abre el tablero, toca Compartir (el cuadro con la flecha hacia arriba) → **Añadir a pantalla de inicio** → Añadir.
+
+**Computadora (Chrome o Edge):** abre el tablero, toca los tres puntos ⋮ → **Instalar Astro-Clima** (o el icono de instalar que aparece en la barra de direcciones). Como alternativa, se puede crear un acceso directo: tres puntos ⋮ → Guardar y compartir → **Crear acceso directo** (en versiones anteriores: Más herramientas → Crear acceso directo).
 
 ## Publicar
 

@@ -1,0 +1,1722 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="normal">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f172a" id="metaTheme">
+    <meta name="description" content="Tablero meteorológico Astro-Clima: datos de la estación EBC y condiciones para observación astronómica.">
+    <title>Astro-Clima — Tablero meteorológico</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+    /* Aplica el tema guardado antes de pintar, para que no parpadee. */
+    (function () {
+        try {
+            if (localStorage.getItem('el-arado-theme') === 'red') {
+                document.documentElement.setAttribute('data-theme', 'red');
+                var m = document.getElementById('metaTheme');
+                if (m) m.setAttribute('content', '#000000');
+            }
+        } catch (e) { /* sin almacenamiento: tema normal */ }
+    })();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #0b1020;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #38bdf8;
+            --accent-amber: #fbbf24;
+            --accent-orange: #fb923c;
+            --accent-green: #4ade80;
+            --accent-red: #f87171;
+            --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+            --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+        }
+        /* Modo luz roja: conserva la visión nocturna. Solo tonos rojos sobre
+           negro; los niveles se distinguen por brillo y siempre llevan texto. */
+        html[data-theme="red"] {
+            --bg-dark: #000000;
+            --card-bg: #0a0000;
+            --border-color: rgba(210, 56, 44, 0.28);
+            --text-primary: #d2382c;
+            --text-secondary: #7d2621;
+            --accent-blue: #a8302a;
+            --accent-amber: #e0483a;
+            --accent-orange: #b3382d;
+            --accent-green: #7a241f;
+            --accent-red: #ff5a47;
+        }
+        html[data-theme="red"] .section-astro { background: #0a0000; }
+        html[data-theme="red"] .metric { background: rgba(20, 0, 0, 0.6); }
+        html[data-theme="red"] select, html[data-theme="red"] input[type="text"], html[data-theme="red"] input[type="number"], html[data-theme="red"] input[type="month"] { background: #050000; }
+        html[data-theme="red"] .btn { color: #000000; }
+        html[data-theme="red"] .btn-outline { color: var(--text-primary); }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: var(--bg-dark); color: var(--text-primary); margin: 0; padding: 20px; }
+        /* Estrellas de fondo (modo normal): puntos fijos que no se mueven al bajar. */
+        body::before {
+            content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .55;
+            background-image:
+                radial-gradient(1px 1px at 8% 14%, #fff, transparent 60%),
+                radial-gradient(1px 1px at 23% 62%, #cfe0ff, transparent 60%),
+                radial-gradient(1.5px 1.5px at 37% 28%, #fff, transparent 60%),
+                radial-gradient(1px 1px at 52% 81%, #cfe0ff, transparent 60%),
+                radial-gradient(1px 1px at 66% 9%, #fff, transparent 60%),
+                radial-gradient(1.5px 1.5px at 78% 47%, #fff, transparent 60%),
+                radial-gradient(1px 1px at 91% 73%, #cfe0ff, transparent 60%),
+                radial-gradient(1px 1px at 14% 90%, #fff, transparent 60%),
+                radial-gradient(1px 1px at 86% 22%, #fff, transparent 60%);
+        }
+        html[data-theme="red"] body::before { display: none; }
+        .container { max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
+        header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 16px 24px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+        .logo-title { display: flex; align-items: center; gap: 12px; }
+        .logo-title i { font-size: 28px; color: var(--accent-amber); }
+        .logo-title h1 { font-family: var(--font-display); font-size: 20px; margin: 0; font-weight: 600; }
+        .logo-title p { margin: 0; font-size: 12px; color: var(--text-secondary); }
+        .header-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .btn { background: var(--accent-blue); color: #0f172a; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); letter-spacing: .04em; }
+        .btn:hover { filter: brightness(1.1); }
+        .btn-amber { background: var(--accent-amber); }
+        .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 6px 12px; border-radius: 20px; font-weight: 600; }
+        .status-online { background: rgba(74, 222, 128, 0.15); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.3); }
+        .status-offline { background: rgba(248, 113, 113, 0.15); color: var(--accent-red); border: 1px solid rgba(248, 113, 113, 0.3); }
+        .status-loading { background: rgba(251, 146, 60, 0.15); color: var(--accent-orange); border: 1px solid rgba(251, 146, 60, 0.4); }
+        .status-stale { background: rgba(251, 191, 36, 0.12); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.4); }
+        .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+        .card-title { font-size: 14px; color: var(--text-secondary); margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px; }
+        .grid-config { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px; font-family: var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+        select, input[type="text"], input[type="number"], input[type="month"] { width: 100%; background: #0f172a; border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px 12px; border-radius: 6px; font-size: 14px; font-family: var(--font-mono); }
+        .section { border-radius: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--border-color); }
+        .section-station { border-left: 5px solid var(--accent-blue); background: var(--card-bg); }
+        .section-astro { border-left: 5px solid var(--accent-amber); background: #1a2236; }
+        .section h2 { font-family: var(--font-display); font-weight: 600; margin: 0 0 4px 0; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+        .section-station h2 i { color: var(--accent-blue); }
+        .section-astro h2 i { color: var(--accent-amber); }
+        .section-sub { font-size: 13px; color: var(--text-secondary); margin: 0 0 16px 0; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+        .metric { background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; }
+        .metric-label { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+        .metric-val { font-family: var(--font-mono); font-size: 26px; font-weight: 600; margin: 6px 0 2px 0; font-variant-numeric: tabular-nums; }
+        .metric-val.blue { color: var(--accent-blue); }
+        .metric-val.amber { color: var(--accent-amber); }
+        .metric-val.green { color: var(--accent-green); }
+        .metric-val.red { color: var(--accent-red); }
+        .metric-val.orange { color: var(--accent-orange); }
+        .metric-note { font-size: 12px; color: var(--text-secondary); }
+        .risk-badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-top: 4px; }
+        .risk-low { background: rgba(74, 222, 128, 0.15); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); }
+        .risk-mid { background: rgba(251, 191, 36, 0.15); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.35); }
+        .risk-high { background: rgba(248, 113, 113, 0.15); color: var(--accent-red); border: 1px solid rgba(248, 113, 113, 0.35); }
+        .verdict { border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; font-size: 15px; line-height: 1.5; }
+        .verdict-good { background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); }
+        .verdict-mid { background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.4); }
+        .verdict-bad { background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.4); }
+        .cloud-bars { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin-top: 8px; }
+        .cloud-bar { flex: 1; background: var(--accent-blue); border-radius: 3px 3px 0 0; min-height: 3px; opacity: 0.85; }
+        .cloud-bar.astro-bar { background: var(--accent-amber); }
+        .cloud-hours { display: flex; gap: 3px; font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+        .cloud-hours span { flex: 1; text-align: center; }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+        .note { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+        .note b { color: var(--text-primary); }
+        .report-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+        .report-row > div { min-width: 190px; }
+        .bar { height: 4px; background: var(--border-color); margin-top: 14px; display: none; border-radius: 2px; }
+        .bar > div { height: 100%; width: 0; background: var(--accent-amber); transition: width .25s; border-radius: 2px; }
+        footer { font-size: 12px; color: var(--text-secondary); text-align: center; line-height: 1.7; margin-top: 8px; }
+        .nodata { color: var(--text-secondary); font-style: italic; }
+        @media (max-width: 640px) {
+            body { padding: 12px; }
+            header { padding: 12px 14px; }
+            .logo-title h1 { font-size: 18px; }
+            .section { padding: 12px; }
+            /* Dos columnas de métricas también en teléfonos angostos (320 px). */
+            .metrics-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+            .metric-val { font-size: 22px; }
+            .chart-container { height: 260px; }
+            /* 16 px en los campos: en iPhone, un campo con letra menor hace zoom
+               automático al tocarlo; con 16 px no pasa. Botones más altos al tacto. */
+            select, input[type="text"], input[type="number"] { font-size: 16px; padding: 10px 12px; }
+            .btn { padding: 10px 16px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div class="logo-title">
+            <i class="fa-solid fa-moon"></i>
+            <div>
+                <h1>Astro-Clima</h1>
+                <p>Tablero de clima para observación astronómica · Red EBC Kuckling</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <span id="tsStatus" class="status-badge status-offline"><i class="fa-solid fa-circle-xmark"></i> Sin conexión</span>
+            <button class="btn" onclick="refreshAll()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+            <button class="btn btn-outline" id="themeBtn" onclick="toggleTheme()">Luz roja</button>
+            <button class="btn btn-outline" onclick="document.getElementById('reportPanel').scrollIntoView({behavior:'smooth'})">Reporte</button>
+        </div>
+    </header>
+
+    <div class="card">
+        <h3 class="card-title"><i class="fa-solid fa-gear"></i> Estación y pronóstico</h3>
+        <div class="grid-config">
+            <div>
+                <label for="stationSelect">Estación EBC</label>
+                <select id="stationSelect" onchange="onStationChange()">
+                    <option value="coban">Cobán</option>
+                    <option value="gualan">Gualán</option>
+                    <option value="teocinte">El Teocinte</option>
+                    <option value="otra">Otra estación (canal manual)</option>
+                </select>
+            </div>
+            <div>
+                <label for="channelInput">Canal de ThingSpeak</label>
+                <input type="text" id="channelInput" value="3246611" placeholder="ID del canal">
+            </div>
+            <div>
+                <label for="latInput">Latitud (pronóstico)</label>
+                <input type="number" id="latInput" value="14.6639" step="0.0001">
+            </div>
+            <div>
+                <label for="lonInput">Longitud (pronóstico)</label>
+                <input type="number" id="lonInput" value="-89.8468" step="0.0001">
+            </div>
+            <div>
+                <label for="altInput">Altitud de la estación (m s.n.m.)</label>
+                <input type="number" id="altInput" value="1306" step="1">
+            </div>
+            <div>
+                <label for="presModeInput">Presión que envía la estación</label>
+                <select id="presModeInput" onchange="saveConfig(); refreshAll();">
+                    <option value="msl" selected>Nivel del mar (EBC)</option>
+                    <option value="station">Nivel de estación</option>
+                </select>
+            </div>
+        </div>
+        <p class="note" style="margin: 12px 0 0 0;">La estación de El Arado todavía no tiene canal propio: mientras se instala, el tablero muestra Cobán para probar. Cuando la estación esté en el observatorio, elige su canal aquí (queda guardado en este navegador). La latitud y longitud son las de San Pedro Pinula, Jalapa — ajústalas al punto exacto del observatorio si las conoces.</p>
+        <p class="note" style="margin: 8px 0 0 0;" id="channelName"><b>Estación conectada:</b> —</p>
+        <div style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <h3 class="card-title"><i class="fa-solid fa-table-columns"></i> Mapeo de campos <span style="font-weight:400; font-size:12px;">— se detecta solo por el nombre del campo; corrígelo si hace falta</span></h3>
+            <div class="grid-config">
+                <div>
+                    <label for="mapTemp">Temperatura</label>
+                    <select id="mapTemp" onchange="onMapChange()">
+                        <option value="">Ninguno</option>
+                        <option value="field1">Campo 1</option><option value="field2">Campo 2</option><option value="field3">Campo 3</option><option value="field4">Campo 4</option>
+                        <option value="field5">Campo 5</option><option value="field6">Campo 6</option><option value="field7">Campo 7</option><option value="field8">Campo 8</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="mapHum">Humedad</label>
+                    <select id="mapHum" onchange="onMapChange()">
+                        <option value="">Ninguno</option>
+                        <option value="field1">Campo 1</option><option value="field2">Campo 2</option><option value="field3">Campo 3</option><option value="field4">Campo 4</option>
+                        <option value="field5">Campo 5</option><option value="field6">Campo 6</option><option value="field7">Campo 7</option><option value="field8">Campo 8</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="mapPres">Presión</label>
+                    <select id="mapPres" onchange="onMapChange()">
+                        <option value="">Ninguno</option>
+                        <option value="field1">Campo 1</option><option value="field2">Campo 2</option><option value="field3">Campo 3</option><option value="field4">Campo 4</option>
+                        <option value="field5">Campo 5</option><option value="field6">Campo 6</option><option value="field7">Campo 7</option><option value="field8">Campo 8</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="mapDew">Punto de rocío</label>
+                    <select id="mapDew" onchange="onMapChange()">
+                        <option value="">Ninguno (se calcula)</option>
+                        <option value="field1">Campo 1</option><option value="field2">Campo 2</option><option value="field3">Campo 3</option><option value="field4">Campo 4</option>
+                        <option value="field5">Campo 5</option><option value="field6">Campo 6</option><option value="field7">Campo 7</option><option value="field8">Campo 8</option>
+                    </select>
+                </div>
+            </div>
+            <p class="note" id="mapUnits" style="margin: 8px 0 0 0;">Unidades detectadas: —</p>
+        </div>
+    </div>
+
+    <!-- ============ SECCIÓN 1: DATOS DE LA ESTACIÓN (medidos) ============ -->
+    <section class="section section-station">
+        <h2><i class="fa-solid fa-satellite-dish"></i> Datos de la estación</h2>
+        <p class="section-sub">Medidos por la estación EBC (ESP32 + BME280) y enviados a ThingSpeak cada 5 minutos.</p>
+        <div class="metrics-grid">
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-temperature-half"></i> Temperatura</div>
+                <div class="metric-val blue" id="mTemp">—</div>
+                <div class="metric-note">°C</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-droplet"></i> Humedad relativa</div>
+                <div class="metric-val blue" id="mHum">—</div>
+                <div class="metric-note">%</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-gauge-high"></i> Presión (nivel del mar)</div>
+                <div class="metric-val blue" id="mPres">—</div>
+                <div class="metric-note">hPa</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-cloud-rain"></i> Punto de rocío</div>
+                <div class="metric-val blue" id="mDew">—</div>
+                <div class="metric-note">°C · calculado por la estación</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-cloud"></i> Base de nubes (LCL)</div>
+                <div class="metric-val blue" id="mLcl">—</div>
+                <div class="metric-note">m sobre el suelo · estimado</div>
+            </div>
+            <div class="metric" id="rainCard">
+                <div class="metric-label"><i class="fa-solid fa-cloud-showers-heavy"></i> Índice de lluvia (estación)</div>
+                <div class="metric-val blue" id="mRain">—</div>
+                <div class="metric-note">0–100 · estimación del firmware, no lluvia medida</div>
+            </div>
+        </div>
+        <p class="note" style="margin: 14px 0 0 0;" id="dataQuality">Calidad de datos: —</p>
+        <p class="note" style="margin: 4px 0 0 0;" id="lastUpdate">Última lectura: —</p>
+    </section>
+
+    <!-- ============ SECCIÓN 2: DATOS PARA OBSERVACIÓN ASTRONÓMICA (calculados + pronóstico) ============ -->
+    <div class="verdict verdict-mid" id="verdictBox">
+        <b><i class="fa-solid fa-telescope"></i> Condiciones para observar:</b> <span id="verdictText">Cargando datos…</span>
+        <div class="note" style="margin-top: 4px;">Este resumen combina la medición local con el pronóstico de modelo. No es una medición.</div>
+    </div>
+
+    <section class="section section-astro">
+        <h2><i class="fa-solid fa-telescope"></i> Datos para observación astronómica</h2>
+        <p class="section-sub">Calculados en esta página a partir de los datos de la estación, más el pronóstico de Open-Meteo. El pronóstico es de modelo, no medición local.</p>
+        <div class="metrics-grid">
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-droplet"></i> Margen de empañamiento (T − Td)</div>
+                <div class="metric-val amber" id="aSpread">—</div>
+                <div class="metric-note">°C entre el aire y el punto de rocío</div>
+                <span class="risk-badge risk-low" id="aSpreadRisk" style="display:none">—</span>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-hourglass-half"></i> Horas estimadas hasta empañamiento</div>
+                <div class="metric-val amber" id="aDewHours">—</div>
+                <div class="metric-note" id="aDewHoursNote">según cuánto se está enfriando el aire</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-arrow-trend-up"></i> Tendencia de presión · 3 h</div>
+                <div class="metric-val amber" id="aPresTrend">—</div>
+                <div class="metric-note" id="aPresTrendNote">regresión 3 h · presión de estación</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-arrow-trend-up"></i> Tendencia de humedad · 1 h</div>
+                <div class="metric-val amber" id="aHumTrend">—</div>
+                <div class="metric-note" id="aHumTrendNote">regresión 1 h</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-cloud"></i> Nubosidad pronosticada · esta noche</div>
+                <div class="metric-val amber" id="aCloud">—</div>
+                <div class="metric-note" id="aCloudNote">promedio 18:00–06:00 · Open-Meteo</div>
+                <div class="cloud-bars" id="cloudBars"></div>
+                <div class="cloud-hours" id="cloudHours"></div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-cloud-rain"></i> Prob. de precipitación · esta noche</div>
+                <div class="metric-val amber" id="aPrecip">—</div>
+                <div class="metric-note" id="aPrecipNote">máxima 18:00–06:00 · Open-Meteo</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-droplet"></i> Margen de rocío pronosticado · mín. de la noche</div>
+                <div class="metric-val amber" id="aFcSpread">—</div>
+                <div class="metric-note" id="aFcSpreadNote">temperatura − punto de rocío del modelo, 18:00–06:00</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-moon"></i> Luna</div>
+                <div class="metric-val amber" id="aMoon">—</div>
+                <div class="metric-note" id="aMoonNote">fase de la Luna · Open-Meteo</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label"><i class="fa-solid fa-wind"></i> Viento · ahora (modelo)</div>
+                <div class="metric-val amber" id="aWind">—</div>
+                <div class="metric-note" id="aWindNote">Open-Meteo · la estación no mide viento</div>
+            </div>
+        </div>
+    </section>
+
+    <div class="card">
+        <h3 class="card-title"><i class="fa-solid fa-chart-line"></i> Temperatura y punto de rocío · estación EBC · últimas 24 h</h3>
+        <p class="note" style="margin: 0 0 12px 0;">Medias horarias de las últimas 24 h (lecturas de cada 5 min agrupadas por hora), no un pronóstico. Cuando las dos curvas se juntan, el aire está cerca de saturarse y el rocío aparece en la óptica. Las horas sin datos se ven como huecos en la línea.</p>
+        <div class="chart-container"><canvas id="dewChart"></canvas></div>
+    </div>
+
+    <div class="card">
+        <h3 class="card-title"><i class="fa-solid fa-cloud-sun"></i> Temperatura y punto de rocío · modelo Open-Meteo · últimas 24 h</h3>
+        <p class="note" style="margin: 0 0 12px 0;">Lo que el modelo Open-Meteo estimó para el lugar donde está esta estación en esas mismas 24 horas pasadas (no es un pronóstico a futuro, es el modelo mirando hacia atrás). Compárala con la gráfica de arriba: si las curvas se parecen, el modelo representa bien el sitio; si se separan, manda la estación, que mide el aire real.</p>
+        <div class="chart-container"><canvas id="modelChart"></canvas></div>
+        <p class="note" id="modelVsStation" style="margin: 12px 0 0 0;">Comparando modelo y estación…</p>
+    </div>
+
+    <div class="card" id="reportPanel">
+        <h3 class="card-title"><i class="fa-solid fa-file-pdf"></i> Reporte mensual en PDF</h3>
+        <p class="note" style="margin: 0 0 12px 0;">Resumen del mes, gráficas, horas con riesgo de rocío por noche, calidad de los datos y comparación de la estación contra el modelo Open-Meteo. Se arma en este navegador con los datos del canal. La estación se pide en medias horarias (un mes completo son ~720 registros, lejos del límite de 8,000 de ThingSpeak).</p>
+        <div class="report-row">
+            <div>
+                <label for="reportMonth">Mes</label>
+                <input type="month" id="reportMonth">
+            </div>
+            <button class="btn" id="reportBtn" onclick="generateReport()">Generar PDF</button>
+        </div>
+        <div class="bar" id="reportBarWrap"><div id="reportBar"></div></div>
+        <p class="note" id="reportMsg">La comparación con el modelo usa las coordenadas y la altitud de la estación elegida (con «Otra estación», las de Ajustes).</p>
+    </div>
+
+    <footer>
+        Fuentes: ThingSpeak (datos de la estación EBC) · Open-Meteo (pronóstico de nubosidad y precipitación, temperatura/punto de rocío del modelo en la segunda gráfica y fase de la Luna).<br>
+        El índice de lluvia, la base de nubes y las horas hasta empañamiento son <b>estimaciones</b>, no mediciones directas.<br>
+        Astro-Clima · Para el Observatorio Astronómico El Arado, San Pedro Pinula, Jalapa · Proyecto EBC Kuckling, Guatemala · <b>Marlon Estuardo Alvarado Kuckling</b> · Licencia CC BY-NC-SA 4.0
+    </footer>
+</div>
+
+<script>
+const STATIONS = {
+    coban:    { name: 'Cobán',       channel: '3246611', altitude: 1306, lat: 15.47025, lon: -90.37455 },
+    gualan:   { name: 'Gualán',      channel: '3225843', altitude: 155,  lat: 15.11952, lon: -89.35721 },
+    teocinte: { name: 'El Teocinte', channel: '3314007', altitude: 1242, lat: 14.40841, lon: -90.36995 },
+    otra:     { name: 'Otra estación', channel: '', altitude: null, lat: null, lon: null }
+};
+const CONFIG_KEY = 'el-arado-config-v1';
+const REFRESH_MS = 5 * 60 * 1000; // 5 minutos, igual que el envío de la estación
+const THEME_KEY = 'el-arado-theme';
+const JSPDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+let reportBusy = false;
+let dewChart = null;
+let modelChart = null;
+let refreshTimer = null;
+
+function loadConfig() {
+    let cfg = { station: 'coban', channel: '3246611', lat: 14.6639, lon: -89.8468, alt: 1306, presMode: 'msl', map: null };
+    try {
+        const stored = localStorage.getItem(CONFIG_KEY);
+        if (stored) cfg = Object.assign(cfg, JSON.parse(stored));
+    } catch (e) { /* sin almacenamiento: usar valores por defecto */ }
+    return cfg;
+}
+function saveConfig() {
+    const cfg = {
+        station: document.getElementById('stationSelect').value,
+        channel: document.getElementById('channelInput').value.trim(),
+        lat: parseFloat(document.getElementById('latInput').value),
+        lon: parseFloat(document.getElementById('lonInput').value),
+        alt: parseFloat(document.getElementById('altInput').value),
+        presMode: document.getElementById('presModeInput').value,
+        map: fieldMap,
+        units: fieldUnits
+    };
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); } catch (e) { /* ignorar */ }
+    return cfg;
+}
+function applyConfig(cfg) {
+    document.getElementById('stationSelect').value = cfg.station in STATIONS ? cfg.station : 'otra';
+    document.getElementById('channelInput').value = cfg.channel;
+    document.getElementById('latInput').value = cfg.lat;
+    document.getElementById('lonInput').value = cfg.lon;
+    document.getElementById('altInput').value = isFinite(cfg.alt) ? cfg.alt : '';
+    document.getElementById('presModeInput').value = cfg.presMode === 'station' ? 'station' : 'msl';
+    // Si ya había un mapeo guardado para este canal (corrección manual del usuario),
+    // se respeta: no se vuelve a detectar.
+    if (cfg.map) {
+        fieldMap = cfg.map;
+        if (cfg.units) fieldUnits = cfg.units;
+        lastChannelSeen = cfg.channel;
+        renderMapUI();
+    }
+}
+function onStationChange() {
+    const sel = document.getElementById('stationSelect').value;
+    if (sel !== 'otra') {
+        document.getElementById('channelInput').value = STATIONS[sel].channel;
+        document.getElementById('altInput').value = STATIONS[sel].altitude;
+    }
+    saveConfig();
+    refreshAll();
+}
+
+function setStatus(type, message) {
+    const badge = document.getElementById('tsStatus');
+    badge.className = 'status-badge status-' + type;
+    const icon = type === 'online' ? 'fa-circle-check' : (type === 'loading' ? 'fa-spinner fa-spin' : (type === 'stale' ? 'fa-triangle-exclamation' : 'fa-circle-xmark'));
+    // El mensaje va como texto, nunca como HTML: puede contener el nombre del canal
+    // o el ID que escribió el usuario, y eso lo controla cualquiera.
+    badge.innerHTML = '<i class="fa-solid ' + icon + '"></i> ';
+    badge.appendChild(document.createTextNode(message));
+}
+
+// Edad de la última lectura: null si llegó hace menos de 15 min (3 envíos de 5 min),
+// o el texto "hace X min/h" si es más vieja. Una API que responde no basta: la
+// estación pudo perder luz o wifi hace horas.
+function staleAgeText(lastT) {
+    if (!isFinite(lastT)) return null;
+    const mins = Math.round((Date.now() - lastT) / 60000);
+    if (mins < 15) return null;
+    return mins < 60 ? 'hace ' + mins + ' min' : 'hace ' + (mins / 60).toFixed(1) + ' h';
+}
+function fmtNum(v, digits) {
+    return (v === null || v === undefined || !isFinite(v)) ? '—' : v.toFixed(digits);
+}
+/* Un número es válido solo si no es null/undefined: isFinite(null) es true y
+   un nulo entraría a promedios y diferencias como 0. */
+function okNum(v) { return v !== null && v !== undefined && isFinite(v); }
+function fmtTimeGT(ms) {
+    return new Date(ms).toLocaleString('es-GT', { timeZone: 'America/Guatemala', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function fmtHourGT(ms) {
+    return new Date(ms).toLocaleString('es-GT', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+// Hora actual de Guatemala como texto "AAAA-MM-DDTHH:MM" (para comparar con las horas de Open-Meteo, que vienen en hora local).
+function gtNowStr() {
+    return new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 16);
+}
+/* Guatemala no usa horario de verano: siempre UTC−6. */
+function gtISO(ms) { return new Date(ms - 6 * 3600 * 1000).toISOString(); }
+
+// ---------- Tema normal / luz roja ----------
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignorar */ }
+    document.getElementById('metaTheme').setAttribute('content', theme === 'red' ? '#000000' : '#0f172a');
+    document.getElementById('themeBtn').textContent = theme === 'red' ? 'Luz normal' : 'Luz roja';
+}
+function toggleTheme() {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'red' ? 'normal' : 'red');
+}
+
+// ---------- Luna ----------
+// Nombre de la fase lunar a partir de la fracción del ciclo (0 = nueva, 0.5 = llena).
+function moonNameFromPhase(ph) {
+    if (ph < 0.03 || ph >= 0.97) return 'Luna nueva';
+    if (ph < 0.22) return 'Creciente';
+    if (ph < 0.28) return 'Cuarto creciente';
+    if (ph < 0.47) return 'Gibosa creciente';
+    if (ph < 0.53) return 'Luna llena';
+    if (ph < 0.72) return 'Gibosa menguante';
+    if (ph < 0.78) return 'Cuarto menguante';
+    return 'Menguante';
+}
+// Fase lunar aproximada por cálculo local (error de un día o menos).
+function moonInfo(d) {
+    const jd = d.getTime() / 86400000 + 2440587.5;
+    let ph = ((jd - 2451550.1) / 29.530588853) % 1;
+    if (ph < 0) ph += 1;
+    return { phase: ph, illum: (1 - Math.cos(2 * Math.PI * ph)) / 2, name: moonNameFromPhase(ph) };
+}
+// La Luna es un dato de consulta: si Open-Meteo trae la fase del día (daily),
+// se usa ese dato, que también da salida y puesta; si no, el cálculo local.
+function renderMoon(fc) {
+    const el = document.getElementById('aMoon');
+    const note = document.getElementById('aMoonNote');
+    let phase = null, rise = null, set = null, fromApi = false;
+    if (fc && fc.daily && fc.daily.time) {
+        const today = gtNowStr().slice(0, 10);
+        const i = fc.daily.time.indexOf(today);
+        if (i >= 0 && okNum(fc.daily.moon_phase[i])) {
+            phase = fc.daily.moon_phase[i]; fromApi = true;
+            rise = fc.daily.moonrise ? fc.daily.moonrise[i] : null;
+            set = fc.daily.moonset ? fc.daily.moonset[i] : null;
+        }
+    }
+    const m = phase !== null
+        ? { phase: phase, illum: (1 - Math.cos(2 * Math.PI * phase)) / 2, name: moonNameFromPhase(phase) }
+        : moonInfo(new Date());
+    el.textContent = m.name + ' · ' + Math.round(m.illum * 100) + ' %';
+    let n = fromApi ? 'dato de Open-Meteo' : 'iluminación calculada (sin dato de Meteo)';
+    if (rise) n += ' · sale ' + rise.slice(11, 16);
+    if (set) n += ' · se pone ' + set.slice(11, 16);
+    note.textContent = n;
+}
+
+    // --- Mapeo de campos: cualquier estación pública de ThingSpeak ---
+    // Cada estación usa los campos como quiere (temperatura en el 1, en el 3, en °F,
+    // presión en hPa, inHg o mmHg...). El tablero lee el NOMBRE de cada campo del
+    // canal y deduce qué es cada uno; si se equivoca, el usuario lo corrige arriba.
+    let fieldMap = { temp: 'field1', hum: 'field2', pres: 'field3', dew: 'field4', rain: 'field5', lcl: 'field6' };
+    let fieldUnits = { temp: 'C', pres: 'hPa' };
+    let lastChannelSeen = null;
+
+    function detectMapping(meta) {
+        const labels = {};
+        for (let i = 1; i <= 8; i++) labels['field' + i] = (meta['field' + i] || '').toLowerCase();
+        function find(keys, exclude) {
+            for (let i = 1; i <= 8; i++) {
+                const key = 'field' + i;
+                if (exclude && exclude.indexOf(key) !== -1) continue;
+                if (keys.some(function (k) { return labels[key].indexOf(k) !== -1; })) return key;
+            }
+            return '';
+        }
+        const temp = find(['temp']);
+        const hum = find(['hum'], [temp]);
+        const pres = find(['pres'], [temp, hum]);
+        const dew = find(['roc', 'dew'], [temp, hum, pres]);
+        // Lluvia: solo si el campo es un ÍNDICE o probabilidad (como el de las EBC),
+        // no una precipitación acumulada en mm, que es otra cosa.
+        const rain = find(['prob', 'índice', 'indice', 'index'], [temp, hum, pres, dew]);
+        const lcl = find(['lcl', 'nube', 'base'], [temp, hum, pres, dew, rain]);
+        const units = { temp: 'C', pres: 'hPa' };
+        if (temp && (labels[temp].indexOf('°f') !== -1 || labels[temp].indexOf('fahrenheit') !== -1 || /\(f\)|\bf\b/.test(labels[temp]))) units.temp = 'F';
+        if (pres && (labels[pres].indexOf('inhg') !== -1 || labels[pres].indexOf('in hg') !== -1)) units.pres = 'inHg';
+        else if (pres && (labels[pres].indexOf('mmhg') !== -1 || labels[pres].indexOf('mm hg') !== -1)) units.pres = 'mmHg';
+        return { map: { temp: temp, hum: hum, pres: pres, dew: dew, rain: rain, lcl: lcl }, units: units };
+    }
+
+    // Punto de rocío por la fórmula de Magnus — la misma que usa el firmware de las
+    // EBC (A = 17.625, B = 243.04). Se usa cuando la estación no envía el rocío.
+    function dewPointMagnus(tC, rh) {
+        const a = 17.625, b = 243.04;
+        const gamma = (a * tC) / (b + tC) + Math.log(rh / 100);
+        return (b * gamma) / (a - gamma);
+    }
+
+    // Presión a nivel de estación a partir de la MSL: inversa exacta de la fórmula
+    // del firmware (la misma que usa el comparador). Sin altitud no se puede invertir.
+    // Devuelve NaN (nunca null): así los isFinite de todo el tablero funcionan,
+    // porque isFinite(null) es true y un nulo entraría a la regresión como 0 hPa.
+    function stationPressure(pMsl, tempC, altitude) {
+        if (!isFinite(pMsl) || !isFinite(tempC) || !isFinite(altitude)) return NaN;
+        return pMsl * Math.pow(1 - (0.0065 * altitude) / (tempC + 273.15), 5.257);
+    }
+
+    // Normaliza una lectura cruda al formato interno. Devuelve null si la
+    // temperatura es imposible (sensor averiado, p. ej. -130 °C): esa lectura no
+    // debe contaminar tendencias ni promedios.
+    function normalizeFeed(f, map, units) {
+        let temp = map.temp ? parseFloat(f[map.temp]) : NaN;
+        if (units.temp === 'F' && isFinite(temp)) temp = (temp - 32) * 5 / 9;
+        let pres = map.pres ? parseFloat(f[map.pres]) : NaN;
+        if (units.pres === 'inHg' && isFinite(pres)) pres = pres * 33.8639;
+        if (units.pres === 'mmHg' && isFinite(pres)) pres = pres * 1.33322;
+        let hum = map.hum ? parseFloat(f[map.hum]) : NaN;
+        let dew = map.dew ? parseFloat(f[map.dew]) : NaN;
+        if (!isFinite(dew) && isFinite(temp) && isFinite(hum) && hum > 0 && hum <= 100) dew = dewPointMagnus(temp, hum);
+        let lcl = map.lcl ? parseFloat(f[map.lcl]) : NaN;
+        if (!isFinite(lcl) && isFinite(temp) && isFinite(dew)) lcl = 125 * (temp - dew);
+        const rainIdx = map.rain ? parseFloat(f[map.rain]) : NaN;
+        if (!isFinite(temp) || temp < -50 || temp > 60) return null;
+        if (isFinite(hum) && (hum < 0 || hum > 100)) hum = NaN;
+        if (isFinite(pres) && (pres < 300 || pres > 1100)) pres = NaN;
+        if (isFinite(dew) && (dew < -50 || dew > 60)) dew = NaN;
+        // Presión de estación para la tendencia: si la estación envía MSL (las EBC),
+        // se invierte la reducción con la altitud y la T del mismo registro; si ya
+        // envía presión de estación, se usa tal cual. Sin altitud no se puede invertir.
+        // presSt es siempre número o NaN, nunca null (ver stationPressure).
+        let presSt = NaN;
+        const presMode = document.getElementById('presModeInput').value;
+        const alt = parseFloat(document.getElementById('altInput').value);
+        if (presMode === 'station') presSt = pres;
+        else if (isFinite(alt)) presSt = stationPressure(pres, temp, alt);
+        if (isFinite(presSt) && (presSt < 300 || presSt > 1100)) presSt = NaN;
+        return { t: Date.parse(f.created_at), temp: temp, hum: hum, pres: pres, dew: dew, rainIdx: rainIdx, lcl: lcl, presSt: presSt };
+    }
+
+    function renderMapUI() {
+        document.getElementById('mapTemp').value = fieldMap.temp || '';
+        document.getElementById('mapHum').value = fieldMap.hum || '';
+        document.getElementById('mapPres').value = fieldMap.pres || '';
+        document.getElementById('mapDew').value = fieldMap.dew || '';
+        const tempUnit = fieldUnits.temp === 'F' ? '°F (convertida a °C)' : '°C';
+        const presUnit = fieldUnits.pres === 'hPa' ? 'hPa' : fieldUnits.pres + ' (convertida a hPa)';
+        document.getElementById('mapUnits').innerHTML = 'Unidades detectadas: temperatura ' + tempUnit + ' · presión ' + presUnit + (fieldMap.dew ? '' : ' · punto de rocío calculado con Magnus');
+    }
+
+    function readMapUI() {
+        return {
+            temp: document.getElementById('mapTemp').value,
+            hum: document.getElementById('mapHum').value,
+            pres: document.getElementById('mapPres').value,
+            dew: document.getElementById('mapDew').value,
+            rain: fieldMap.rain, lcl: fieldMap.lcl
+        };
+    }
+
+    function onMapChange() {
+        fieldMap = readMapUI();
+        saveConfig();
+        refreshAll();
+    }
+
+    // Un solo pedido a ThingSpeak para cualquier rango (las 24 h del tablero o
+    // el mes del reporte). Con avgMin, ThingSpeak promedia por hora en su lado:
+    // un mes completo son ~720 registros en vez de ~8,640, lejos del límite
+    // de 8,000 por consulta. Sin avgMin, trae las lecturas crudas de 5 min.
+    async function fetchRange(channel, startMs, endMs, avgMin) {
+        let url = 'https://api.thingspeak.com/channels/' + encodeURIComponent(channel) +
+            '/feeds.json?start=' + encodeURIComponent(new Date(startMs).toISOString()) +
+            '&end=' + encodeURIComponent(new Date(endMs).toISOString()) + '&results=8000&timezone=UTC';
+        if (avgMin) url += '&average=' + encodeURIComponent(avgMin);
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('ThingSpeak respondió ' + r.status);
+        const data = await r.json();
+        const raw = data.feeds || [];
+        const feeds = raw.map(function (f) { return normalizeFeed(f, fieldMap, fieldUnits); })
+            .filter(function (f) { return f && isFinite(f.t); });
+        return { feeds: feeds, meta: data.channel || {}, rawCount: raw.length };
+    }
+
+async function fetchForecast(lat, lon) {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(lat) +
+        '&longitude=' + encodeURIComponent(lon) +
+        '&hourly=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation_probability,temperature_2m,dew_point_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +
+        '&daily=moon_phase,moonrise,moonset&forecast_days=2&past_days=1&timezone=America%2FGuatemala';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Open-Meteo respondió ' + r.status);
+    return await r.json();
+}
+
+// Coordenadas para la gráfica del modelo: las de LA ESTACIÓN, no las del
+// observatorio. El pronóstico de la noche (nubes, lluvia, viento) sí es para
+// el observatorio, donde se mira; pero comparar la estación con un modelo de
+// otro lugar no tiene sentido: Gualán está a 124 m y San Pedro Pinula a
+// 1,096 m, y solo esa diferencia de altitud ya son ~6 °C. Con "otra estación"
+// (coordenadas desconocidas) se usa la del observatorio como antes.
+// La altitud también es la de la estación: Open-Meteo corrige la temperatura
+// del modelo con la altura del terreno en las coordenadas, y el casco urbano
+// puede estar decenas de metros arriba o abajo de donde está la estación
+// (~0.65 °C por cada 100 m).
+function modelCoordsFor(cfg) {
+    const st = STATIONS[cfg.station];
+    // Ojo: isFinite(null) es true (null se convierte a 0), así que el nulo se
+    // revisa aparte: sin coordenadas válidas, se usan las del observatorio.
+    if (st && typeof st.lat === 'number' && typeof st.lon === 'number' && isFinite(st.lat) && isFinite(st.lon)) return { lat: st.lat, lon: st.lon, elev: st.altitude };
+    return { lat: cfg.lat, lon: cfg.lon, elev: isFinite(cfg.alt) ? cfg.alt : null };
+}
+function modelAtStationUrl(lat, lon, elev) {
+    let url = 'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(lat) +
+        '&longitude=' + encodeURIComponent(lon) +
+        '&hourly=temperature_2m,dew_point_2m&forecast_days=1&past_days=1&timezone=America%2FGuatemala';
+    if (elev !== null && elev !== undefined && isFinite(elev)) url += '&elevation=' + encodeURIComponent(elev);
+    return url;
+}
+async function fetchModelAtStation(lat, lon, elev) {
+    const r = await fetch(modelAtStationUrl(lat, lon, elev));
+    if (!r.ok) throw new Error('Open-Meteo respondió ' + r.status);
+    return await r.json();
+}
+
+// Pendiente de una recta por mínimos cuadrados: °C por hora. x en horas desde el primer punto.
+function linSlope(points) {
+    const n = points.length;
+    if (n < 3) return null;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (const p of points) { sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y; }
+    const den = n * sxx - sx * sx;
+    if (!den) return null;
+    return (n * sxy - sx * sy) / den;
+}
+
+function renderStation(feeds) {
+    const last = feeds[feeds.length - 1];
+    document.getElementById('mTemp').textContent = fmtNum(last.temp, 1) + ' °C';
+    document.getElementById('mHum').textContent = fmtNum(last.hum, 0) + ' %';
+    document.getElementById('mPres').textContent = fmtNum(last.pres, 1) + ' hPa';
+    document.getElementById('mDew').textContent = fmtNum(last.dew, 1) + ' °C';
+    document.getElementById('mLcl').textContent = fmtNum(last.lcl, 0) + ' m';
+    document.getElementById('mRain').textContent = fmtNum(last.rainIdx, 0) + ' / 100';
+    // El índice de lluvia es propio de las EBC: si la estación no lo envía, la tarjeta se oculta.
+    document.getElementById('rainCard').style.display = isFinite(last.rainIdx) ? '' : 'none';
+    document.getElementById('lastUpdate').textContent = 'Última lectura: ' + fmtTimeGT(last.t) + ' (hora de Guatemala)';
+
+    // Muestras válidas: cuántas lecturas llegaron contra las esperadas (una cada 5 min).
+    const now = Date.now();
+    const inHour = feeds.filter(function (f) { return f.t >= now - 3600 * 1000; }).length;
+    const in3h = feeds.filter(function (f) { return f.t >= now - 3 * 3600 * 1000; }).length;
+    document.getElementById('dataQuality').textContent =
+        'Calidad de datos: ' + inHour + '/12 muestras en la última hora · ' + in3h + '/36 en las últimas 3 h. ' +
+        'Si faltan muchas, la estación pudo perder luz o wifi.';
+}
+
+function renderAstro(feeds) {
+    const last = feeds[feeds.length - 1];
+    const spread = (isFinite(last.temp) && isFinite(last.dew)) ? last.temp - last.dew : NaN;
+
+    // 1) Margen de empañamiento y riesgo de rocío. Sin punto de rocío válido no hay
+    // margen: no se puede decir "bajo riesgo" solo porque NaN no cumple ninguna condición.
+    document.getElementById('aSpread').textContent = fmtNum(spread, 1) + ' °C';
+    const riskEl = document.getElementById('aSpreadRisk');
+    if (!isFinite(spread)) {
+        riskEl.style.display = 'none';
+    } else {
+        riskEl.style.display = 'inline-block';
+        if (spread < 2) {
+            riskEl.textContent = 'Alto riesgo de rocío';
+            riskEl.className = 'risk-badge risk-high';
+        } else if (spread < 5) {
+            riskEl.textContent = 'Vigilar: el rocío se acerca';
+            riskEl.className = 'risk-badge risk-mid';
+        } else {
+            riskEl.textContent = 'Bajo riesgo de rocío';
+            riskEl.className = 'risk-badge risk-low';
+        }
+    }
+
+    // 2) Horas estimadas hasta empañamiento: margen / velocidad de enfriamiento (últimas 2 h).
+    const now = Date.now();
+    const recent = feeds.filter(function (f) { return f.t >= now - 2 * 3600 * 1000; });
+    const t0 = recent.length ? recent[0].t : now;
+    const slope = linSlope(recent.map(function (f) { return { x: (f.t - t0) / 3600000, y: f.temp }; }));
+    const dewEl = document.getElementById('aDewHours');
+    const dewNote = document.getElementById('aDewHoursNote');
+    if (!isFinite(spread)) {
+        dewEl.textContent = '—';
+        dewNote.textContent = 'sin punto de rocío válido';
+    } else if (spread <= 0.5) {
+        dewEl.textContent = 'Rocío ahora';
+        dewNote.textContent = 'la temperatura ya llegó al punto de rocío';
+    } else if (slope === null || slope >= -0.05) {
+        dewEl.textContent = 'Sin riesgo por ahora';
+        dewNote.textContent = 'el aire no se está enfriando';
+    } else {
+        const hours = spread / Math.abs(slope);
+        dewEl.textContent = hours > 12 ? 'más de 12 h' : '≈ ' + hours.toFixed(1) + ' h';
+        dewNote.textContent = 'enfriando a ' + Math.abs(slope).toFixed(2) + ' °C/h · estimación, no garantía';
+    }
+
+    // 3) Tendencia de presión 3 h, por regresión lineal sobre la PRESIÓN DE ESTACIÓN.
+    // La presión del campo 3 viene reducida a nivel del mar con la temperatura de la
+    // estación: a ~1300 m eso mete ~0.55 hPa por cada °C, y una tarde que se enfría
+    // 4 °C "sube" la presión ~2 hPa sin que cambie nada real. La regresión, además,
+    // no se deja voltear por una sola lectura mala (primer-contra-último sí).
+    const presEl = document.getElementById('aPresTrend');
+    const presNote = document.getElementById('aPresTrendNote');
+    const winP = feeds.filter(function (f) { return f.t >= now - 3 * 3600 * 1000; });
+    const withSt = winP.filter(function (f) { return isFinite(f.presSt); });
+    const useStation = withSt.length >= 3;
+    const ptsP = (useStation ? withSt : winP.filter(function (f) { return isFinite(f.pres); }))
+        .map(function (f) { return { x: (f.t - (winP[0] ? winP[0].t : now)) / 3600000, y: useStation ? f.presSt : f.pres }; });
+    const slopePres = ptsP.length >= 3 ? linSlope(ptsP) : null;
+    const dPres = slopePres === null ? null : slopePres * 3; // hPa en 3 h
+    if (dPres === null) { presEl.textContent = '—'; presNote.textContent = 'sin datos suficientes en 3 h'; }
+    else {
+        presEl.textContent = (dPres >= 0 ? '+' : '') + dPres.toFixed(1) + ' hPa / 3 h';
+        // Umbral ±1.0 hPa: en el trópico la marea atmosférica semidiurna (S2) mueve
+        // la presión ~1 hPa sola, así que ±0.5 marcaba "bajando/subiendo" todos los días.
+        const dir = dPres > 1.0 ? 'subiendo · mejora el tiempo' : (dPres < -1.0 ? 'bajando · puede empeorar' : 'estable');
+        presNote.textContent = dir + (useStation ? ' · regresión 3 h, presión de estación' : ' · regresión 3 h, sin altitud: puede reflejar la temperatura');
+    }
+
+    // 4) Tendencia de humedad 1 h, por regresión lineal como la de presión: el
+    // primer-contra-último se volteaba con una sola lectura mala.
+    const winH = feeds.filter(function (f) { return f.t >= now - 3600 * 1000 && isFinite(f.hum); });
+    const slopeHum = winH.length >= 3 ? linSlope(winH.map(function (f) { return { x: (f.t - (winH[0] ? winH[0].t : now)) / 3600000, y: f.hum }; })) : null;
+    const dHum = slopeHum === null ? null : slopeHum * 1; // % en 1 h
+    const humEl = document.getElementById('aHumTrend');
+    const humNote = document.getElementById('aHumTrendNote');
+    if (dHum === null) { humEl.textContent = '—'; humNote.textContent = 'sin datos suficientes en 1 h'; }
+    else {
+        humEl.textContent = (dHum >= 0 ? '+' : '') + dHum.toFixed(1) + ' % / 1 h';
+        humNote.textContent = (dHum > 2 ? 'subiendo · el rocío se acerca' : (dHum < -2 ? 'bajando' : 'estable')) + ' · regresión 1 h';
+    }
+}
+
+// Dirección del viento en 16 puntos, en español. Open-Meteo da la dirección
+// DESDE donde sopla (0° = viento del norte).
+function windDirText(deg) {
+    if (!isFinite(deg)) return '';
+    const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+    return dirs[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+// Índice de la última hora del modelo que ya pasó (la más cercana a "ahora").
+function currentWindIdx(times, nowStr) {
+    let idx = -1;
+    for (let i = 0; i < times.length; i++) { if (times[i] <= nowStr) idx = i; }
+    return idx;
+}
+// Máximos de viento y de ráfagas del modelo dentro de una ventana horaria.
+function nightWindMaxima(times, speeds, gusts, start, end) {
+    let maxSpeed = null, maxGust = null;
+    for (let i = 0; i < times.length; i++) {
+        if (times[i] < start || times[i] > end) continue;
+        const sOk = okNum(speeds[i]);
+        const gOk = okNum(gusts[i]);
+        if (sOk && (maxSpeed === null || speeds[i] > maxSpeed)) maxSpeed = speeds[i];
+        if (gOk && (maxGust === null || gusts[i] > maxGust)) maxGust = gusts[i];
+    }
+    return { maxSpeed: maxSpeed, maxGust: maxGust };
+}
+
+function renderForecast(fc) {
+    const times = (fc.hourly && fc.hourly.time) || [];
+    const cloud = (fc.hourly && fc.hourly.cloud_cover) || [];
+    const precip = (fc.hourly && fc.hourly.precipitation_probability) || [];
+    const temp2m = (fc.hourly && fc.hourly.temperature_2m) || [];
+    const dew2m = (fc.hourly && fc.hourly.dew_point_2m) || [];
+    const windSpeed = (fc.hourly && fc.hourly.wind_speed_10m) || [];
+    const windDir = (fc.hourly && fc.hourly.wind_direction_10m) || [];
+    const windGust = (fc.hourly && fc.hourly.wind_gusts_10m) || [];
+    const cloudLow = (fc.hourly && fc.hourly.cloud_cover_low) || [];
+    const cloudMid = (fc.hourly && fc.hourly.cloud_cover_mid) || [];
+    const cloudHigh = (fc.hourly && fc.hourly.cloud_cover_high) || [];
+    const cloudEl = document.getElementById('aCloud');
+    const cloudNote = document.getElementById('aCloudNote');
+    const precipEl = document.getElementById('aPrecip');
+    const precipNote = document.getElementById('aPrecipNote');
+    const fcSpreadEl = document.getElementById('aFcSpread');
+    const fcSpreadNote = document.getElementById('aFcSpreadNote');
+    const windEl = document.getElementById('aWind');
+    const windNote = document.getElementById('aWindNote');
+    const barsEl = document.getElementById('cloudBars');
+    const hoursEl = document.getElementById('cloudHours');
+    barsEl.innerHTML = '';
+    hoursEl.innerHTML = '';
+    const empty = { nightCloudAvg: null, nightPrecipMax: null, nightLowAvg: null, nightMidAvg: null, nightHighAvg: null, nightFcSpreadMin: null, nightWindMax: null };
+    if (!times.length) {
+        cloudEl.textContent = '—';
+        cloudNote.textContent = 'sin pronóstico disponible';
+        precipEl.textContent = '—';
+        precipNote.textContent = 'sin pronóstico disponible';
+        fcSpreadEl.textContent = '—';
+        fcSpreadNote.textContent = 'sin pronóstico disponible';
+        windEl.textContent = '—';
+        windNote.textContent = 'sin pronóstico disponible';
+        return empty;
+    }
+
+    // Noche: de 18:00 a 06:00. Entre las 00:00 y las 06:00 la noche en curso empezó
+    // AYER a las 18:00 (si no, a las 02:00 la ventana saltaría a la noche siguiente
+    // y se perdería justo la noche que se está observando). Por eso el pedido trae
+    // past_days=1: las horas de ayer por la noche no vienen si no se piden.
+    const nowGT = new Date(Date.now() - 6 * 3600 * 1000);
+    const hourGT = nowGT.getUTCHours();
+    const today = gtNowStr().slice(0, 10);
+    let nightStart, nightEnd;
+    if (hourGT < 6) {
+        const yesterday = new Date(Date.now() - 6 * 3600 * 1000 - 24 * 3600 * 1000).toISOString().slice(0, 10);
+        nightStart = yesterday + 'T18:00';
+        nightEnd = today + 'T06:00';
+    } else {
+        const tomorrow = new Date(Date.now() - 6 * 3600 * 1000 + 24 * 3600 * 1000).toISOString().slice(0, 10);
+        nightStart = today + 'T18:00';
+        nightEnd = tomorrow + 'T06:00';
+    }
+    const avg = function (a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; };
+    let nightCloud = [], nightPrecip = [], nightLow = [], nightMid = [], nightHigh = [], nightSpread = [];
+    for (let i = 0; i < times.length; i++) {
+        if (times[i] >= nightStart && times[i] <= nightEnd) {
+            if (isFinite(cloud[i])) nightCloud.push(cloud[i]);
+            if (isFinite(precip[i])) nightPrecip.push(precip[i]);
+            if (isFinite(cloudLow[i])) nightLow.push(cloudLow[i]);
+            if (isFinite(cloudMid[i])) nightMid.push(cloudMid[i]);
+            if (isFinite(cloudHigh[i])) nightHigh.push(cloudHigh[i]);
+            if (isFinite(temp2m[i]) && isFinite(dew2m[i])) nightSpread.push(temp2m[i] - dew2m[i]);
+        }
+    }
+    const nightCloudAvg = avg(nightCloud);
+    const nightPrecipMax = nightPrecip.length ? Math.max.apply(null, nightPrecip) : null;
+    const nightLowAvg = avg(nightLow), nightMidAvg = avg(nightMid), nightHighAvg = avg(nightHigh);
+    const nightFcSpreadMin = nightSpread.length ? Math.min.apply(null, nightSpread) : null;
+    cloudEl.textContent = nightCloudAvg === null ? '—' : Math.round(nightCloudAvg) + ' %';
+    const fmtP = function (v) { return v === null ? '—' : Math.round(v) + '%'; };
+    cloudNote.textContent = nightCloudAvg === null ? 'sin pronóstico disponible'
+        : 'promedio 18:00–06:00 · baja ' + fmtP(nightLowAvg) + ' / media ' + fmtP(nightMidAvg) + ' / alta ' + fmtP(nightHighAvg) + ' · Open-Meteo';
+    precipEl.textContent = nightPrecipMax === null ? '—' : Math.round(nightPrecipMax) + ' %';
+    precipNote.textContent = 'máxima 18:00–06:00 · Open-Meteo';
+    fcSpreadEl.textContent = nightFcSpreadMin === null ? '—' : nightFcSpreadMin.toFixed(1) + ' °C';
+    fcSpreadNote.textContent = nightFcSpreadMin === null ? 'sin pronóstico disponible'
+        : (nightFcSpreadMin < 2 ? 'el modelo prevé rocío esta noche' : 'temperatura − punto de rocío del modelo, 18:00–06:00');
+
+    // Barras de nubosidad de las próximas 12 h.
+    const nowStr = gtNowStr();
+    let shown = 0;
+    for (let i = 0; i < times.length && shown < 12; i++) {
+        if (times[i] < nowStr) continue;
+        const v = isFinite(cloud[i]) ? cloud[i] : 0;
+        const bar = document.createElement('div');
+        bar.className = 'cloud-bar astro-bar';
+        bar.style.height = Math.max(3, v * 0.56) + 'px';
+        bar.title = times[i].slice(11, 16) + ' · nubosidad ' + v + ' %';
+        barsEl.appendChild(bar);
+        const h = document.createElement('span');
+        h.textContent = times[i].slice(11, 13) + 'h';
+        hoursEl.appendChild(h);
+        shown++;
+    }
+
+    // Viento: el modelo es la única fuente, la estación EBC no tiene anemómetro.
+    // Actual = la última hora del modelo; máxima de la noche en la ventana 18:00–06:00.
+    // Con ráfagas fuertes un telescopio chico se mueve: por eso van las ráfagas, no solo la media.
+    const curIdx = currentWindIdx(times, nowStr);
+    const nightWind = nightWindMaxima(times, windSpeed, windGust, nightStart, nightEnd);
+    if (curIdx < 0 || !isFinite(windSpeed[curIdx])) {
+        windEl.textContent = '—';
+        windNote.textContent = 'sin dato de viento del modelo';
+    } else {
+        windEl.textContent = Math.round(windSpeed[curIdx]) + ' km/h ' + windDirText(windDir[curIdx]);
+        let note = 'ráfagas ' + (isFinite(windGust[curIdx]) ? Math.round(windGust[curIdx]) + ' km/h' : '—');
+        if (nightWind.maxSpeed !== null) note += ' · máx. esta noche ' + Math.round(nightWind.maxSpeed) + ' km/h';
+        if (nightWind.maxGust !== null && nightWind.maxGust >= 35) note += ' · ráfagas fuertes, el telescopio se mueve';
+        note += ' · modelo Open-Meteo';
+        windNote.textContent = note;
+    }
+    return { nightCloudAvg: nightCloudAvg, nightPrecipMax: nightPrecipMax, nightLowAvg: nightLowAvg, nightMidAvg: nightMidAvg, nightHighAvg: nightHighAvg, nightFcSpreadMin: nightFcSpreadMin, nightWindMax: nightWind.maxSpeed };
+}
+
+function renderVerdict(spread, night) {
+    const box = document.getElementById('verdictBox');
+    const txt = document.getElementById('verdictText');
+    let level = 'mid', msg = 'Regulares.';
+    // Sin pronóstico no se puede decir "Buenas": la ausencia de datos no es cielo despejado.
+    if (night.nightCloudAvg === null && night.nightPrecipMax === null) {
+        level = 'mid'; msg = 'Sin pronóstico: no se puede evaluar la nubosidad de esta noche.';
+    } else if (night.nightPrecipMax !== null && night.nightPrecipMax >= 50) {
+        level = 'bad'; msg = 'Malas: lluvia probable esta noche (' + Math.round(night.nightPrecipMax) + ' %).';
+    } else if (night.nightCloudAvg !== null && night.nightCloudAvg >= 70) {
+        level = 'bad'; msg = 'Malas: cielo mayormente nublado esta noche (' + Math.round(night.nightCloudAvg) + ' % de nubosidad).';
+    } else if (spread !== null && spread < 2) {
+        level = 'mid'; msg = 'Regulares: el cielo puede estar despejado, pero el rocío es inminente (margen ' + spread.toFixed(1) + ' °C).';
+    } else if (night.nightCloudAvg !== null && night.nightCloudAvg >= 40) {
+        level = 'mid'; msg = 'Regulares: nubes parciales esta noche (' + Math.round(night.nightCloudAvg) + ' % de nubosidad).';
+    } else if (night.nightCloudAvg === null) {
+        // Hay probabilidad de lluvia pero no dato de nubosidad: no se puede decir
+        // "cielo despejado" sin haber visto las nubes.
+        level = 'mid'; msg = 'Regulares: sin dato de nubosidad para esta noche; lluvia poco probable (' + Math.round(night.nightPrecipMax) + ' %).';
+    } else {
+        level = 'good';
+        msg = spread === null
+            ? 'Buenas: cielo despejado esta noche (sin dato local de rocío).'
+            : 'Buenas: cielo despejado y margen de rocío amplio.';
+    }
+    box.className = 'verdict verdict-' + level;
+    txt.textContent = msg;
+}
+
+// Las 24 horas de Guatemala que terminan en la hora actual ("AAAA-MM-DDTHH").
+// Las dos gráficas de 24 h usan las mismas 24 etiquetas: empiezan a la misma
+// hora, se comparan directo, y las horas sin datos se ven como huecos.
+function last24HourKeys() {
+    const keys = [];
+    for (let i = 23; i >= 0; i--) keys.push(gtISO(Date.now() - i * 3600 * 1000).slice(0, 13));
+    return keys;
+}
+// Medias horarias de la estación (temperatura y rocío) para las últimas 24 h.
+// null donde no hay lecturas: la línea se corta y el hueco se ve.
+function stationHourlySeries(feeds) {
+    const sums = {}, counts = {}, dewSums = {}, dewCounts = {};
+    for (const f of feeds) {
+        const key = gtISO(f.t).slice(0, 13);
+        if (okNum(f.temp)) { sums[key] = (sums[key] || 0) + f.temp; counts[key] = (counts[key] || 0) + 1; }
+        if (okNum(f.dew)) { dewSums[key] = (dewSums[key] || 0) + f.dew; dewCounts[key] = (dewCounts[key] || 0) + 1; }
+    }
+    const keys = last24HourKeys();
+    return {
+        keys: keys,
+        labels: keys.map(function (k) { return k.slice(11, 13) + ':00'; }),
+        temps: keys.map(function (k) { return counts[k] ? sums[k] / counts[k] : null; }),
+        dews: keys.map(function (k) { return dewCounts[k] ? dewSums[k] / dewCounts[k] : null; })
+    };
+}
+
+function renderChart(feeds) {
+    const ctx = document.getElementById('dewChart').getContext('2d');
+    const s = stationHourlySeries(feeds);
+    const labels = s.labels;
+    const temps = s.temps;
+    const dews = s.dews;
+    if (dewChart) dewChart.destroy();
+    dewChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Temperatura (°C)', data: temps, borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false },
+                { label: 'Punto de rocío (°C)', data: dews, borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: '#f8fafc' } } },
+            scales: {
+                x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: 'rgba(148,163,184,0.15)' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.15)' } }
+            }
+        }
+    });
+}
+
+// --- Comparación estación vs modelo (Open-Meteo) ---
+// El pedido del pronóstico ya trae las horas pasadas (past_days=1): temperatura
+// y punto de rocío del modelo, hora por hora, para el mismo lugar. La segunda
+// gráfica dibuja ese modelo en las mismas 24 horas que la gráfica de la estación,
+// y el texto de abajo resume la diferencia media: modelo menos estación, hora por
+// hora, solo en las horas donde hay medición local. Si el modelo se separa mucho,
+// manda la estación: el modelo es una malla de ~11 km y no ve el microclima del
+// observatorio; la estación mide el aire real de ahí.
+function modelSeriesLast24h(fc) {
+    const times = (fc.hourly && fc.hourly.time) || [];
+    const temps = (fc.hourly && fc.hourly.temperature_2m) || [];
+    const dews = (fc.hourly && fc.hourly.dew_point_2m) || [];
+    const nowStr = gtNowStr();
+    const startStr = new Date(Date.now() - 6 * 3600 * 1000 - 24 * 3600 * 1000).toISOString().slice(0, 16);
+    const out = { labels: [], temps: [], dews: [], keys: [] };
+    for (let i = 0; i < times.length; i++) {
+        if (times[i] < startStr || times[i] > nowStr) continue;
+        const tOk = okNum(temps[i]);
+        const dOk = okNum(dews[i]);
+        if (!tOk && !dOk) continue;
+        out.labels.push(times[i].slice(11, 16));
+        out.temps.push(tOk ? temps[i] : null);
+        out.dews.push(dOk ? dews[i] : null);
+        out.keys.push(times[i].slice(0, 13)); // "AAAA-MM-DDTHH", hora de Guatemala
+    }
+    return out;
+}
+// Temperatura media de la estación por hora de Guatemala ("AAAA-MM-DDTHH").
+function stationHourlyMeans(feeds) {
+    const sums = {}, counts = {};
+    for (const f of feeds) {
+        if (!okNum(f.temp)) continue;
+        const key = new Date(f.t - 6 * 3600 * 1000).toISOString().slice(0, 13);
+        sums[key] = (sums[key] || 0) + f.temp;
+        counts[key] = (counts[key] || 0) + 1;
+    }
+    const means = {};
+    for (const k in sums) means[k] = sums[k] / counts[k];
+    return means;
+}
+// Diferencia media modelo − estación en las horas comparadas. Positivo: el modelo
+// marca más caliente que la estación; negativo: más frío.
+function meanModelMinusStation(model, stationMeans) {
+    let sum = 0, n = 0;
+    for (let i = 0; i < model.keys.length; i++) {
+        const m = model.temps[i], s = stationMeans[model.keys[i]];
+        if (!okNum(m) || !okNum(s)) continue;
+        sum += m - s; n++;
+    }
+    return n ? { delta: sum / n, hours: n } : null;
+}
+
+function renderModelChart(fc, feeds) {
+    const noteEl = document.getElementById('modelVsStation');
+    const model = fc ? modelSeriesLast24h(fc) : { labels: [], temps: [], dews: [], keys: [] };
+    // Las mismas 24 etiquetas que la gráfica de la estación: las dos empiezan
+    // a la misma hora y los huecos (horas sin modelo) se ven como cortes.
+    const keys = last24HourKeys();
+    const byKey = {};
+    model.keys.forEach(function (k, i) { byKey[k] = i; });
+    const temps = keys.map(function (k) { return byKey[k] !== undefined ? model.temps[byKey[k]] : null; });
+    const dews = keys.map(function (k) { return byKey[k] !== undefined ? model.dews[byKey[k]] : null; });
+    if (!model.labels.length) {
+        if (modelChart) { modelChart.destroy(); modelChart = null; }
+        noteEl.textContent = 'Sin datos del modelo para las últimas 24 h (sin pronóstico).';
+        return;
+    }
+    const ctx = document.getElementById('modelChart').getContext('2d');
+    if (modelChart) modelChart.destroy();
+    modelChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: keys.map(function (k) { return k.slice(11, 13) + ':00'; }),
+            datasets: [
+                { label: 'Temperatura modelo (°C)', data: temps, borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false },
+                { label: 'Punto de rocío modelo (°C)', data: dews, borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: '#f8fafc' } } },
+            scales: {
+                x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: 'rgba(148,163,184,0.15)' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.15)' } }
+            }
+        }
+    });
+    const cmp = meanModelMinusStation(model, stationHourlyMeans(feeds));
+    if (!cmp) {
+        noteEl.textContent = 'No hay horas en común para comparar modelo y estación.';
+        return;
+    }
+    const d = cmp.delta;
+    const verdict = Math.abs(d) < 0.5 ? 'el modelo sigue bien a la estación en este sitio.'
+        : (d > 0 ? 'el modelo marca más caliente que la medición local.' : 'el modelo marca más frío que la medición local.');
+    noteEl.textContent = 'En las últimas 24 h el modelo estuvo en promedio ' + (d >= 0 ? '+' : '') + d.toFixed(1) +
+        ' °C respecto a la estación (' + cmp.hours + ' horas comparadas): ' + verdict;
+}
+
+// ---------- Reporte mensual en PDF ----------
+function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+        if (window.jspdf) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = function () { resolve(); };
+        s.onerror = function () { reject(new Error('No se pudo cargar el generador de PDF (¿hay internet?)')); };
+        document.head.appendChild(s);
+    });
+}
+function setProgress(pct, msg) {
+    document.getElementById('reportBarWrap').style.display = 'block';
+    document.getElementById('reportBar').style.width = pct + '%';
+    if (msg) document.getElementById('reportMsg').textContent = msg;
+}
+
+function pairStats(a, b) {          // a = EBC, b = modelo
+    const n = a.length;
+    if (n < 5) return null;
+    let sa = 0, sb = 0;
+    for (let i = 0; i < n; i++) { sa += a[i]; sb += b[i]; }
+    const ma = sa / n, mb = sb / n;
+    let sxx = 0, syy = 0, sxy = 0, se = 0, sae = 0, sse = 0;
+    for (let i = 0; i < n; i++) {
+        const da = a[i] - ma, db = b[i] - mb, e = a[i] - b[i];
+        sxx += da * da; syy += db * db; sxy += da * db;
+        se += e; sae += Math.abs(e); sse += e * e;
+    }
+    return { n: n, r: (sxx > 0 && syy > 0) ? sxy / Math.sqrt(sxx * syy) : NaN, bias: se / n, mae: sae / n, rmse: Math.sqrt(sse / n) };
+}
+
+async function chartToImage(w, h, config) {
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    config.options = Object.assign({ responsive: false, animation: false, devicePixelRatio: 1, font: { size: 22 } }, config.options || {});
+    config.plugins = (config.plugins || []).concat([{
+        id: 'whiteBg',
+        beforeDraw: function (c) {
+            const x = c.ctx;
+            x.save(); x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height); x.restore();
+        }
+    }]);
+    const ch = new Chart(canvas, config);
+    const url = canvas.toDataURL('image/png');
+    ch.destroy();
+    return url;
+}
+function tsConfig(labels, datasets, yTitle) {
+    return {
+        type: 'line',
+        data: { labels: labels, datasets: datasets },
+        options: {
+            plugins: { legend: { display: datasets.length > 1, labels: { boxWidth: 30 } } },
+            scales: {
+                x: { ticks: { maxTicksLimit: 10, maxRotation: 0, callback: function (v) { const l = this.getLabelForValue(v); return l.slice(8, 10) + '/' + l.slice(5, 7); } }, grid: { color: '#e3e3e3' } },
+                y: { title: { display: true, text: yTitle }, grid: { color: '#e3e3e3' } }
+            }
+        }
+    };
+}
+function lineDs(label, data, color) {
+    return { label: label, data: data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, spanGaps: false, tension: 0 };
+}
+function scatterConfig(title, unit, pts) {
+    let lo = Infinity, hi = -Infinity;
+    pts.forEach(function (p) { lo = Math.min(lo, p.x, p.y); hi = Math.max(hi, p.x, p.y); });
+    const pad = (hi - lo) * 0.05 || 1;
+    lo -= pad; hi += pad;
+    return {
+        type: 'scatter',
+        data: { datasets: [
+            { label: 'Horas', data: pts, backgroundColor: 'rgba(31,119,180,0.45)', pointRadius: 4 },
+            { type: 'line', label: 'Línea 1:1', data: [{ x: lo, y: lo }, { x: hi, y: hi }], borderColor: '#2a9d4a', borderDash: [10, 8], borderWidth: 2, pointRadius: 0 }
+        ] },
+        options: {
+            font: { size: 20 },
+            plugins: { legend: { display: false }, title: { display: true, text: title, font: { size: 24 } } },
+            scales: {
+                x: { min: lo, max: hi, title: { display: true, text: 'Modelo Open-Meteo (' + unit + ')' }, grid: { color: '#e3e3e3' } },
+                y: { min: lo, max: hi, title: { display: true, text: 'Estación EBC (' + unit + ')' }, grid: { color: '#e3e3e3' } }
+            }
+        }
+    };
+}
+
+async function generateReport() {
+    if (reportBusy) return;
+    const monthVal = document.getElementById('reportMonth').value;
+    if (!/^\d{4}-\d{2}$/.test(monthVal)) { document.getElementById('reportMsg').textContent = 'Elige un mes.'; return; }
+    const cfg = saveConfig();
+    if (!cfg.channel) { document.getElementById('reportMsg').textContent = 'Falta el canal de ThingSpeak en Ajustes.'; return; }
+    reportBusy = true;
+    document.getElementById('reportBtn').disabled = true;
+    try {
+        setProgress(2, 'Cargando el generador de PDF…');
+        await loadScript(JSPDF_URL);
+
+        const y = parseInt(monthVal.slice(0, 4), 10), m = parseInt(monthVal.slice(5, 7), 10);
+        const startMs = Date.UTC(y, m - 1, 1, 6);            // 00:00 de Guatemala
+        const fullEndMs = Date.UTC(y, m, 1, 6);
+        if (startMs >= Date.now()) throw new Error('Ese mes todavía no empieza.');
+        const endMs = Math.min(fullEndMs, Date.now());
+        const partial = endMs < fullEndMs;
+        const mc = modelCoordsFor(cfg);
+        const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+        // --- 1) ThingSpeak en UN solo pedido, promediado por hora (average=60):
+        // un mes completo son ~720 registros en vez de ~8,640, lejos del límite
+        // de 8,000 por consulta. Cada registro ya es la media de esa hora.
+        setProgress(8, 'Descargando datos de la estación (medias horarias)…');
+        const r0 = await fetchRange(cfg.channel, startMs, endMs, 60);
+        const rawTotal = r0.rawCount;
+        const feeds = r0.feeds.slice().sort(function (a, b) { return a.t - b.t; });
+        if (feeds.length < 10) throw new Error('El canal casi no tiene datos en ese mes.');
+
+        // --- 2) Medias horarias: cada registro ya es la media de su hora.
+        setProgress(30, 'Procesando datos…');
+        const VARS = ['temp', 'hum', 'pres', 'dew', 'presSt'];
+        const hourly = feeds.map(function (f) {
+            const r = { k: gtISO(f.t).slice(0, 13), n: 1 };
+            VARS.forEach(function (v) { r[v] = okNum(f[v]) ? f[v] : NaN; });
+            return r;
+        });
+        const hourlyByKey = {};
+        hourly.forEach(function (r) { hourlyByKey[r.k] = r; });
+
+        // --- 3) Extremos de medias horarias
+        function extremes(v) {
+            let mn = null, mx = null, sum = 0, cnt = 0;
+            hourly.forEach(function (r) {
+                if (!isFinite(r[v])) return;
+                sum += r[v]; cnt++;
+                if (mn === null || r[v] < mn.v) mn = { v: r[v], k: r.k };
+                if (mx === null || r[v] > mx.v) mx = { v: r[v], k: r.k };
+            });
+            return { mean: cnt ? sum / cnt : NaN, min: mn, max: mx };
+        }
+        const ext = { temp: extremes('temp'), hum: extremes('hum'), pres: extremes('pres'), dew: extremes('dew') };
+
+        // --- 4) Resumen diario con las medias horarias (mínima/máxima del día
+        // son la menor y mayor media horaria, no picos de 5 minutos).
+        const days = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+            const ds = Date.UTC(y, m - 1, d, 6);
+            if (ds >= endMs) break;
+            const de = Math.min(ds + 86400000, endMs);
+            days.push({ key: gtISO(ds).slice(0, 10), d: d, expected: (de - ds) / 3600000, n: 0, tmin: null, tmax: null, ts: 0, tn: 0, hs: 0, hn: 0, ps: 0, pn: 0 });
+        }
+        const dayIdx = {};
+        days.forEach(function (dd, i) { dayIdx[dd.key] = i; });
+        feeds.forEach(function (f) {
+            const dd = days[dayIdx[gtISO(f.t).slice(0, 10)]];
+            if (!dd) return;
+            dd.n++;
+            if (okNum(f.temp)) {
+                if (dd.tmin === null || f.temp < dd.tmin) dd.tmin = f.temp;
+                if (dd.tmax === null || f.temp > dd.tmax) dd.tmax = f.temp;
+                dd.ts += f.temp; dd.tn++;
+            }
+            if (okNum(f.hum)) { dd.hs += f.hum; dd.hn++; }
+            if (okNum(f.pres)) { dd.ps += f.pres; dd.pn++; }
+        });
+
+        // --- 5) Calidad de datos (por hora, no por lectura de 5 min)
+        const expectedTotal = Math.floor((endMs - startMs) / 3600000);
+        const completeness = Math.min(100, feeds.length / expectedTotal * 100);
+        const gaps = [];
+        let prevT = startMs;
+        feeds.forEach(function (f) {
+            if (f.t - prevT > 2 * 3600000) gaps.push({ a: prevT, b: f.t, min: (f.t - prevT) / 60000 });
+            prevT = f.t;
+        });
+        if (endMs - prevT > 2 * 3600000) gaps.push({ a: prevT, b: endMs, min: (endMs - prevT) / 60000 });
+        const topGaps = gaps.slice().sort(function (a, b) { return b.min - a.min; }).slice(0, 6);
+        const discarded = Math.max(0, rawTotal - feeds.length);
+
+        // --- 6) Riesgo de rocío por noche (18:00–05:59)
+        const nights = {};
+        hourly.forEach(function (r) {
+            if (!isFinite(r.temp) || !isFinite(r.dew)) return;
+            const h = parseInt(r.k.slice(11, 13), 10);
+            let nd;
+            if (h >= 18) nd = r.k.slice(0, 10);
+            else if (h <= 5) nd = new Date(Date.parse(r.k.slice(0, 10) + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+            else return;
+            if (nd.slice(0, 7) !== monthVal) return;
+            const o = nights[nd] || (nights[nd] = { bad: 0, mid: 0, n: 0 });
+            const sp = r.temp - r.dew;
+            o.n++;
+            if (sp < 2) o.bad++; else if (sp < 5) o.mid++;
+        });
+        let hoursBad = 0, hoursMid = 0, hoursNight = 0, nightsBad = 0, nightsCount = 0;
+        Object.keys(nights).forEach(function (k) {
+            const o = nights[k];
+            hoursBad += o.bad; hoursMid += o.mid; hoursNight += o.n; nightsCount++;
+            if (o.bad > 0) nightsBad++;
+        });
+
+        // --- 7) Open-Meteo (modelo) para la comparación
+        let omError = null, omData = null;
+        try {
+            setProgress(55, 'Descargando datos del modelo Open-Meteo…');
+            const sd = monthVal + '-01';
+            let ed = monthVal + '-' + String(daysInMonth).padStart(2, '0');
+            const todayLocal = gtNowStr().slice(0, 10);
+            if (ed > todayLocal) ed = todayLocal;
+            if (!okNum(mc.lat) || !okNum(mc.lon)) throw new Error('faltan latitud y longitud en Ajustes');
+            const url = 'https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(mc.lat) +
+                '&longitude=' + encodeURIComponent(mc.lon) + (okNum(mc.elev) ? '&elevation=' + encodeURIComponent(mc.elev) : '') +
+                '&start_date=' + sd + '&end_date=' + ed +
+                '&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure&timezone=America%2FGuatemala';
+            const r = await fetch(url);
+            if (!r.ok) throw new Error('Open-Meteo respondió ' + r.status);
+            omData = await r.json();
+            if (!omData.hourly || !omData.hourly.time) throw new Error('respuesta sin datos horarios');
+        } catch (e) { omError = e.message; omData = null; }
+
+        let cmp = null;
+        if (omData) {
+            const ot = omData.hourly.time;
+            const spec = [
+                { id: 'temp', name: 'Temperatura', unit: 'C', ebc: 'temp', om: omData.hourly.temperature_2m },
+                { id: 'hum', name: 'Humedad relativa', unit: '%', ebc: 'hum', om: omData.hourly.relative_humidity_2m },
+                { id: 'dew', name: 'Punto de rocio', unit: 'C', ebc: 'dew', om: omData.hourly.dew_point_2m },
+                { id: 'pres', name: 'Presion de estacion', unit: 'hPa', ebc: 'presSt', om: omData.hourly.surface_pressure }
+            ];
+            cmp = { vars: [], tempByHour: [] };
+            for (let hh = 0; hh < 24; hh++) cmp.tempByHour.push({ s: 0, n: 0 });
+            spec.forEach(function (sp) {
+                const a = [], b = [], pts = [];
+                for (let i = 0; i < ot.length; i++) {
+                    const row = hourlyByKey[ot[i].slice(0, 13)];
+                    if (!row || !sp.om || !okNum(sp.om[i]) || !okNum(row[sp.ebc])) continue;
+                    a.push(row[sp.ebc]); b.push(sp.om[i]);
+                    pts.push({ x: sp.om[i], y: row[sp.ebc] });
+                    if (sp.id === 'temp') {
+                        const hh = parseInt(ot[i].slice(11, 13), 10);
+                        cmp.tempByHour[hh].s += row[sp.ebc] - sp.om[i];
+                        cmp.tempByHour[hh].n++;
+                    }
+                }
+                cmp.vars.push({ id: sp.id, name: sp.name, unit: sp.unit, stats: pairStats(a, b), pts: pts });
+            });
+        }
+
+        // --- 8) Gráficas (en colores de impresión, fondo blanco)
+        setProgress(70, 'Dibujando gráficas…');
+        const allKeys = [];
+        for (let t = startMs; t < endMs; t += 3600000) allKeys.push(gtISO(t).slice(0, 13));
+        const series = function (v) { return allKeys.map(function (k) { const r = hourlyByKey[k]; return r && isFinite(r[v]) ? r[v] : null; }); };
+        const IMG_W = 1400, IMG_H = 420;
+        const img = {};
+        img.temp = await chartToImage(IMG_W, IMG_H, tsConfig(allKeys, [lineDs('Temperatura', series('temp'), '#d35400'), lineDs('Punto de rocio', series('dew'), '#1f77b4')], 'Media horaria (C)'));
+        img.hum = await chartToImage(IMG_W, IMG_H, tsConfig(allKeys, [lineDs('Humedad relativa', series('hum'), '#2a9d8f')], 'Media horaria (%)'));
+        img.pres = await chartToImage(IMG_W, IMG_H, tsConfig(allKeys, [lineDs('Presion (nivel del mar)', series('pres'), '#6a4c93')], 'Media horaria (hPa)'));
+        const dayLabels = days.map(function (dd) { return String(dd.d); });
+        const nightKeys = days.map(function (dd) { return dd.key; });
+        img.nights = await chartToImage(IMG_W, IMG_H, {
+            type: 'bar',
+            data: { labels: dayLabels, datasets: [
+                { label: 'Horas con margen < 2 C', data: nightKeys.map(function (k) { return nights[k] ? nights[k].bad : 0; }), backgroundColor: '#c0392b' },
+                { label: 'Horas con margen 2 a 5 C', data: nightKeys.map(function (k) { return nights[k] ? nights[k].mid : 0; }), backgroundColor: '#e0a100' }
+            ] },
+            options: { scales: { x: { stacked: true, title: { display: true, text: 'Noche que empieza el dia' } }, y: { stacked: true, max: 12, title: { display: true, text: 'Horas (de 12)' }, grid: { color: '#e3e3e3' } } } }
+        });
+        img.complete = await chartToImage(IMG_W, IMG_H, {
+            type: 'bar',
+            data: { labels: dayLabels, datasets: [{ label: 'Horas con datos (%)', data: days.map(function (dd) { return Math.min(100, dd.n / dd.expected * 100); }), backgroundColor: '#4f6d7a' }] },
+            options: { plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Dia del mes' } }, y: { min: 0, max: 100, title: { display: true, text: 'Horas con datos (%)' }, grid: { color: '#e3e3e3' } } } }
+        });
+        if (cmp) {
+            for (const cv of cmp.vars) {
+                if (cv.pts.length >= 5) cv.img = await chartToImage(700, 700, scatterConfig(cv.name, cv.unit, cv.pts));
+            }
+            const biasData = cmp.tempByHour.map(function (o) { return o.n ? o.s / o.n : null; });
+            if (cmp.tempByHour.some(function (o) { return o.n > 0; })) {
+                img.diurnal = await chartToImage(IMG_W, IMG_H, {
+                    type: 'bar',
+                    data: { labels: cmp.tempByHour.map(function (o, i) { return String(i).padStart(2, '0') + 'h'; }), datasets: [{ label: 'Sesgo medio (EBC - modelo)', data: biasData, backgroundColor: biasData.map(function (v) { return v !== null && v < 0 ? '#1f77b4' : '#d35400'; }) }] },
+                    options: { plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Hora del dia (Guatemala)' } }, y: { title: { display: true, text: 'Temperatura EBC - modelo (C)' }, grid: { color: '#e3e3e3' } } } }
+                });
+            }
+            // Gráfica comparativa EBC contra modelo (serie temporal, hora por hora).
+            const omByKey = {};
+            omData.hourly.time.forEach(function (t, i) { omByKey[t.slice(0, 13)] = omData.hourly.temperature_2m[i]; });
+            const modelSeries = allKeys.map(function (k) { const v = omByKey[k]; return okNum(v) ? v : null; });
+            img.cmpTemp = await chartToImage(IMG_W, IMG_H, tsConfig(allKeys, [lineDs('Estación EBC', series('temp'), '#d35400'), lineDs('Modelo Open-Meteo', modelSeries, '#1f77b4')], 'Temperatura media horaria (°C)'));
+        }
+
+        // --- 9) Armar el PDF
+        setProgress(85, 'Armando el PDF…');
+        const doc = buildPdf({
+            y: y, m: m, monthVal: monthVal, cfg: cfg, mc: mc, partial: partial, endMs: endMs, startMs: startMs,
+            meta: document.getElementById('channelName').textContent.replace('Estación conectada: ', ''),
+            ext: ext, days: days, feeds: feeds, rawTotal: rawTotal, discarded: discarded,
+            expectedTotal: expectedTotal, completeness: completeness, gaps: gaps, topGaps: topGaps,
+            hoursBad: hoursBad, hoursMid: hoursMid, hoursNight: hoursNight, nightsBad: nightsBad, nightsCount: nightsCount,
+            cmp: cmp, omError: omError, img: img
+        });
+        doc.save('Reporte_ElArado_' + monthVal + '.pdf');
+        setProgress(100, 'Listo: se descargó Reporte_ElArado_' + monthVal + '.pdf');
+    } catch (e) {
+        setProgress(0, 'No se pudo generar el reporte: ' + e.message);
+        document.getElementById('reportBarWrap').style.display = 'none';
+    } finally {
+        reportBusy = false;
+        document.getElementById('reportBtn').disabled = false;
+    }
+}
+
+function buildPdf(D) {
+    const jsPDF = window.jspdf.jsPDF;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const W = 210, H = 297, M = 15, CW = W - 2 * M;
+    let y = M;
+
+    function ensure(h) { if (y + h > H - M - 4) { doc.addPage(); y = M; return true; } return false; }
+    function h1(t) { doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20); doc.text(t, M, y + 6); y += 10; }
+    function h2(t) { ensure(14); y += 3; doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(20); doc.text(t, M, y + 4); y += 7; }
+    function para(t, size, gray) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(size || 9); doc.setTextColor(gray === undefined ? 60 : gray);
+        const lines = doc.splitTextToSize(t, CW);
+        ensure(lines.length * 4.2 + 2);
+        doc.text(lines, M, y + 3);
+        y += lines.length * 4.2 + 2;
+    }
+    function image(url, w, h) { ensure(h + 2); doc.addImage(url, 'PNG', M, y, w, h); y += h + 3; }
+    function table(head, rows, widths, aligns) {
+        const rh = 5.2, total = widths.reduce(function (a, b) { return a + b; }, 0);
+        function drawRow(cells, bold, zebra) {
+            if (zebra) { doc.setFillColor(243, 243, 243); doc.rect(M, y, total, rh, 'F'); }
+            doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(8); doc.setTextColor(30);
+            let x = M;
+            cells.forEach(function (c, i) {
+                const r = aligns[i] === 'r';
+                doc.text(String(c), r ? x + widths[i] - 1.5 : x + 1.5, y + 3.7, { align: r ? 'right' : 'left' });
+                x += widths[i];
+            });
+            y += rh;
+        }
+        function drawHead() { drawRow(head, true, false); doc.setDrawColor(120); doc.line(M, y - 0.3, M + total, y - 0.3); }
+        ensure(rh * 3);
+        drawHead();
+        rows.forEach(function (r, i) {
+            if (y + rh > H - M - 4) { doc.addPage(); y = M; drawHead(); }
+            drawRow(r, false, i % 2 === 1);
+        });
+        y += 2;
+    }
+    function n1(v, d) { return isFinite(v) ? v.toFixed(d === undefined ? 1 : d) : '-'; }
+    function sign(v, d) { return isFinite(v) ? (v >= 0 ? '+' : '') + v.toFixed(d === undefined ? 2 : d) : '-'; }
+    function fmtKey(k) { return k.slice(8, 10) + '/' + k.slice(5, 7) + ' ' + k.slice(11, 13) + ':00'; }
+    function fmtMs(ms) { const s = gtISO(ms); return s.slice(8, 10) + '/' + s.slice(5, 7) + ' ' + s.slice(11, 16); }
+
+    // ---------- Página 1: portada y resumen ----------
+    const monthName = MONTHS_ES[D.m - 1];
+    h1('Astro-Clima');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(60);
+    doc.text('Reporte meteorológico mensual · ' + monthName.charAt(0).toUpperCase() + monthName.slice(1) + ' ' + D.y, M, y + 3);
+    y += 9;
+    para('Estación: ' + D.meta + '\nCoordenadas del modelo: ' + D.mc.lat + ', ' + D.mc.lon + ' · Altitud: ' + (okNum(D.mc.elev) ? D.mc.elev + ' m' : 'la del terreno') +
+        '\nPeriodo: ' + fmtMs(D.startMs) + ' a ' + fmtMs(D.endMs) + (D.partial ? ' (mes en curso, datos hasta la fecha)' : '') +
+        '\nGenerado: ' + fmtMs(Date.now()) + ' (hora de Guatemala)', 9, 50);
+
+    h2('Resumen del mes');
+    const rowsSum = [
+        ['Temperatura (C)', D.ext.temp], ['Humedad relativa (%)', D.ext.hum],
+        ['Presion nivel del mar (hPa)', D.ext.pres], ['Punto de rocio (C)', D.ext.dew]
+    ].map(function (a) {
+        const e = a[1], d = a[0].indexOf('hPa') > -1 ? 1 : 1;
+        return [a[0], n1(e.mean, d), e.min ? n1(e.min.v, d) : '-', e.min ? fmtKey(e.min.k) : '-', e.max ? n1(e.max.v, d) : '-', e.max ? fmtKey(e.max.k) : '-'];
+    });
+    table(['Variable', 'Media', 'Minima', 'Fecha', 'Maxima', 'Fecha'], rowsSum, [52, 22, 22, 28, 22, 34], ['l', 'r', 'r', 'l', 'r', 'l']);
+    para('Las minimas y maximas son la menor y mayor media horaria del mes. El reporte pide los datos ya promediados por hora a ThingSpeak (average=60), asi que no hay picos de 5 minutos: un extremo aislado del sensor no define el mes.', 8, 90);
+
+    h2('Riesgo de rocio durante la noche (18:00 a 06:00)');
+    para('Horas nocturnas evaluadas: ' + D.hoursNight + '. Con margen T-Td menor de 2 C (rocio probable en la optica): ' + D.hoursBad +
+        ' h. Con margen de 2 a 5 C (vigilar): ' + D.hoursMid + ' h. Noches con al menos una hora bajo 2 C: ' + D.nightsBad + ' de ' + D.nightsCount + '.', 9);
+
+    h2('Calidad de los datos');
+    para('Horas con datos: ' + D.feeds.length + ' de ' + D.expectedTotal + ' esperadas = ' + n1(D.completeness, 1) +
+        ' %. Registros descartados por valores imposibles: ' + D.discarded + '. Huecos mayores de 2 h: ' + D.gaps.length + '.', 9);
+    if (D.topGaps.length) {
+        table(['Hueco: inicio', 'Hueco: fin', 'Duracion'], D.topGaps.map(function (g) {
+            return [fmtMs(g.a), fmtMs(g.b), g.min >= 120 ? n1(g.min / 60, 1) + ' h' : Math.round(g.min) + ' min'];
+        }), [45, 45, 30], ['l', 'l', 'r']);
+    }
+
+    // ---------- Página 2: series del mes ----------
+    doc.addPage(); y = M;
+    h1('Series del mes');
+    para('Medias horarias. Los tramos sin linea son horas sin datos suficientes.', 8, 90);
+    h2('Temperatura y punto de rocio');
+    image(D.img.temp, 180, 54);
+    h2('Humedad relativa');
+    image(D.img.hum, 180, 54);
+    h2('Presión a nivel del mar');
+    image(D.img.pres, 180, 54);
+
+    // ---------- Página 3: rocío y calidad ----------
+    doc.addPage(); y = M;
+    h1('Rocío nocturno y calidad de datos');
+    h2('Horas con riesgo de rocio por noche');
+    image(D.img.nights, 180, 54);
+    para('Cada barra es la noche que empieza ese día (18:00 a 06:00). Rojo: margen menor de 2 C; ambar: de 2 a 5 C.', 8, 90);
+    h2('Horas con datos por dia');
+    image(D.img.complete, 180, 54);
+
+    // ---------- Página 4: comparación con el modelo ----------
+    doc.addPage(); y = M;
+    h1('Comparación con el modelo Open-Meteo');
+    if (!D.cmp) {
+        para('No se pudo obtener el modelo para este mes' + (D.omError ? ' (' + D.omError + ')' : '') + '. El resto del reporte no depende de esta sección.', 9);
+    } else {
+        para('Se comparan las medias horarias de la estación contra el valor horario del modelo (archivo de pronosticos de Open-Meteo) para las coordenadas indicadas en la portada. El modelo representa una celda de varios kilometros: una diferencia sistematica no implica por si sola un error de la estación, y la presión del modelo depende de la altitud de la celda.', 8, 70);
+        const stRows = D.cmp.vars.map(function (cv) {
+            const s = cv.stats;
+            return s ? [cv.name + ' (' + cv.unit + ')', s.n, n1(s.r, 3), sign(s.bias), n1(s.mae, 2), n1(s.rmse, 2)] : [cv.name + ' (' + cv.unit + ')', 0, '-', '-', '-', '-'];
+        });
+        table(['Variable', 'Horas', 'R', 'Sesgo EBC-modelo', 'MAE', 'RMSE'], stRows, [52, 18, 22, 40, 22, 22], ['l', 'r', 'r', 'r', 'r', 'r']);
+        para('R mide si las dos series suben y bajan juntas; no mide si coinciden en valor. El sesgo, el MAE y el RMSE estan en las unidades de cada variable.', 8, 90);
+        if (D.img.cmpTemp) {
+            h2('Temperatura: estación contra modelo, hora por hora');
+            image(D.img.cmpTemp, 180, 54);
+            para('Las dos series en el mismo eje: naranja es la media horaria de la estación y azul, el modelo. Si se separan al mediodia, el sensor puede estar calentandose con el sol o el modelo no ve el microclima del lugar.', 8, 90);
+        }
+        const withImg = D.cmp.vars.filter(function (cv) { return cv.img; });
+        const SZ = 85;
+        for (let i = 0; i < withImg.length; i += 2) {
+            ensure(SZ + 3);
+            doc.addImage(withImg[i].img, 'PNG', M, y, SZ, SZ);
+            if (withImg[i + 1]) doc.addImage(withImg[i + 1].img, 'PNG', M + SZ + 10, y, SZ, SZ);
+            y += SZ + 3;
+        }
+        if (D.img.diurnal) {
+            h2('Sesgo de temperatura segun la hora del dia');
+            image(D.img.diurnal, 180, 54);
+            para('Si el sesgo es mayor al mediodia, el sensor puede estar calentandose con el sol o con el propio equipo (revisar pantalla de radiacion y modo de medicion).', 8, 90);
+        }
+    }
+
+    // ---------- Última sección: tabla diaria ----------
+    doc.addPage(); y = M;
+    h1('Resumen diario');
+    const dRows = D.days.map(function (dd) {
+        return [
+            dd.key.slice(8, 10) + '/' + dd.key.slice(5, 7),
+            dd.tmin === null ? '-' : n1(dd.tmin), dd.tmax === null ? '-' : n1(dd.tmax),
+            dd.tn ? n1(dd.ts / dd.tn) : '-', dd.hn ? n1(dd.hs / dd.hn, 0) : '-', dd.pn ? n1(dd.ps / dd.pn) : '-',
+            dd.n + '/' + Math.round(dd.expected)
+        ];
+    });
+    table(['Dia', 'T min (C)', 'T max (C)', 'T media (C)', 'HR media (%)', 'P media (hPa)', 'Horas'], dRows, [20, 26, 28, 26, 26, 28, 26], ['l', 'r', 'r', 'r', 'r', 'r', 'r']);
+    para('T min y T max son la menor y mayor media horaria del dia. La columna Horas dice cuantas horas del dia tienen datos (de 24).', 8, 90);
+    h2('Notas');
+    para('Datos de la estación: ThingSpeak (canal #' + D.cfg.channel + '), pedidos en medias horarias. Modelo: Open-Meteo. La tendencia y la comparacion de presion usan presion de estación (se invierte la reduccion al nivel del mar con la altitud y la temperatura). Las estimaciones (indice de lluvia, base de nubes, horas hasta empañamiento) no son mediciones directas.', 8, 90);
+
+    // Pie de página
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(130);
+        doc.text('Astro-Clima · Proyecto EBC Kuckling · Datos: ThingSpeak y Open-Meteo', M, H - 8);
+        doc.text('Página ' + i + ' de ' + pages, W - M, H - 8, { align: 'right' });
+    }
+    return doc;
+}
+
+async function refreshAll() {
+    const cfg = saveConfig();
+    if (!cfg.channel) { setStatus('offline', 'Falta el canal de ThingSpeak'); return; }
+    setStatus('loading', 'Actualizando…');
+    let feeds = null, fc = null, night = { nightCloudAvg: null, nightPrecipMax: null };
+    renderMoon(null); // fase lunar calculada al momento; el dato de Meteo la reemplaza si llega
+    try {
+        const now = Date.now();
+        let res = await fetchRange(cfg.channel, now - 24 * 3600 * 1000, now);
+        feeds = res.feeds;
+        // Al cambiar de canal, detectar el mapeo por los nombres de campo.
+        if (cfg.channel !== lastChannelSeen) {
+            lastChannelSeen = cfg.channel;
+            const detected = detectMapping(res.meta);
+            fieldMap = detected.map;
+            fieldUnits = detected.units;
+            renderMapUI();
+            saveConfig();
+            // Re-normalizar con el mapeo detectado (fetchRange usó el anterior).
+            const res2 = await fetchRange(cfg.channel, now - 24 * 3600 * 1000, now);
+            feeds = res2.feeds;
+            res.rawCount = res2.rawCount;
+            res.meta = res2.meta;
+        }
+        // El nombre del canal lo controla su dueño: va como texto, nunca como HTML.
+        const nameEl = document.getElementById('channelName');
+        nameEl.innerHTML = '';
+        const bEl = document.createElement('b');
+        bEl.textContent = 'Estación conectada: ';
+        nameEl.appendChild(bEl);
+        nameEl.appendChild(document.createTextNode(res.meta.name ? res.meta.name + ' (canal #' + cfg.channel + ')' : 'canal #' + cfg.channel));
+        if (!feeds.length) {
+            if (res.rawCount > 0) throw new Error('el canal envía datos, pero la temperatura no es válida (¿sensor averiado?)');
+            throw new Error('El canal no devolvió lecturas');
+        }
+        // Que la API responda no basta: si la última lectura es vieja, la estación
+        // pudo perder luz o wifi hace horas y el tablero no debe verse "conectado".
+        const ageText = staleAgeText(feeds[feeds.length - 1].t);
+        if (ageText) setStatus('stale', 'Datos viejos: última lectura ' + ageText);
+        else setStatus('online', 'Conectado: canal #' + cfg.channel);
+        renderStation(feeds);
+        renderAstro(feeds);
+        renderChart(feeds);
+    } catch (e) {
+        setStatus('offline', 'Sin conexión a ThingSpeak: ' + e.message);
+        // El recuadro del veredicto también se resetea: si no, conserva el color
+        // del cálculo anterior y parece una evaluación vigente.
+        document.getElementById('verdictBox').className = 'verdict verdict-mid';
+        document.getElementById('verdictText').textContent = 'Sin datos de la estación por ahora.';
+        return;
+    }
+    try {
+        fc = await fetchForecast(cfg.lat, cfg.lon);
+        night = renderForecast(fc);
+        renderMoon(fc);
+    } catch (e) {
+        document.getElementById('aCloud').textContent = '—';
+        document.getElementById('aCloudNote').textContent = 'sin pronóstico: ' + e.message;
+        document.getElementById('aPrecip').textContent = '—';
+        document.getElementById('aPrecipNote').textContent = 'sin pronóstico: ' + e.message;
+        document.getElementById('aFcSpread').textContent = '—';
+        document.getElementById('aFcSpreadNote').textContent = 'sin pronóstico: ' + e.message;
+        document.getElementById('aWind').textContent = '—';
+        document.getElementById('aWindNote').textContent = 'sin pronóstico: ' + e.message;
+        renderMoon(null);
+    }
+    // La gráfica del modelo se compara con LA ESTACIÓN: el modelo se pide para
+    // las coordenadas de la estación. Si ese pedido falla, se usa el pronóstico
+    // del observatorio como antes; si tampoco hay, la gráfica queda sin datos.
+    try {
+        const mc = modelCoordsFor(cfg);
+        const fcStation = await fetchModelAtStation(mc.lat, mc.lon, mc.elev);
+        renderModelChart(fcStation, feeds);
+    } catch (e) {
+        renderModelChart(fc, feeds);
+    }
+    const last = feeds[feeds.length - 1];
+    const spread = (isFinite(last.temp) && isFinite(last.dew)) ? last.temp - last.dew : null;
+    renderVerdict(spread, night);
+}
+
+window.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('themeBtn').textContent = document.documentElement.getAttribute('data-theme') === 'red' ? 'Luz normal' : 'Luz roja';
+    const nowMonth = gtNowStr().slice(0, 7);
+    document.getElementById('reportMonth').value = nowMonth;
+    document.getElementById('reportMonth').max = nowMonth;
+    applyConfig(loadConfig());
+    // Escribir el canal a mano cambia la estación a "Otra" y conecta al soltar la tecla.
+    let channelTimer = null;
+    document.getElementById('channelInput').addEventListener('input', function () {
+        document.getElementById('stationSelect').value = 'otra';
+        if (channelTimer) clearTimeout(channelTimer);
+        channelTimer = setTimeout(function () { saveConfig(); refreshAll(); }, 800);
+    });
+    refreshAll();
+    refreshTimer = setInterval(refreshAll, REFRESH_MS);
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(function () { /* sin PWA offline: la página igual funciona */ });
+    }
+});
+</script>
+</body>
+</html>
